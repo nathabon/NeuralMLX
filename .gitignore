@@ -1,0 +1,4 @@
+# ignore datasets
+**/datasets
+
+# Ignore all hiden files
