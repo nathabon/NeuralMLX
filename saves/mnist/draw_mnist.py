@@ -2,7 +2,7 @@ import pygame
 import mlx.core as mx
 import numpy as np
 import sys
-import neuralNetwork2 as nn
+import neural.neuralNetwork2 as nn
 
 # -------------------------------------------------------
 # Config

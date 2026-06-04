@@ -1,4 +1,4 @@
-from neuralNetwork2 import *
+from neural.neuralNetwork2 import *
 import h5py
 
 

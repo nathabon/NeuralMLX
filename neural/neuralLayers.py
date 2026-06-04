@@ -2,7 +2,7 @@ import mlx.core as mx
 import mlx
 import numpy as np
 from collections.abc import Callable
-from other import *
+from neural.other import *
 import h5py
 
 def no_grad(func):
@@ -79,7 +79,7 @@ class Layer:
     def backward(self, delta: mx.array) -> mx.array:
         raise NotImplementedError(f"{type(self).__name__} doit implémenter backward")
 
-    def update(self, learningRate: float):
+    def update(self, learningRate: float, optimizer: str = "sgd"):
         if self.weights is not None and self.grad is not None:
             self.weights = self.weights - learningRate * self.grad
     
@@ -209,8 +209,8 @@ class NeuralLayer(Layer):
         self.weights = self.weights - lr * m_w_hat / (mx.sqrt(v_w_hat) + eps)
         self.biais   = self.biais   - lr * m_b_hat / (mx.sqrt(v_b_hat) + eps)
 
-    def update(self, learningRate: float):
-        if self.optimizer == "adam":
+    def update(self, learningRate: float, optimizer: str = "sgd"):
+        if optimizer == "adam":
             self.updateAdam(learningRate)
         else:
             self.weights = self.weights - learningRate * self.grad_weights
@@ -328,8 +328,8 @@ class ConvolutionalLayer(Layer):
 
         self.kernel = self.kernel - lr * m_hat / (mx.sqrt(v_hat) + eps)
 
-    def update(self, learningRate: float):
-        if self.optimizer == "adam":
+    def update(self, learningRate: float, optimizer: str = "sgd"):
+        if optimizer == "adam":
             self.updateAdam(learningRate)
         else:
             self.kernel = self.kernel - learningRate * self.grad

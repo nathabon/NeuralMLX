@@ -1,10 +1,10 @@
 import gymnasium as gym
 import numpy as np
 import mlx.core as mx
-import neuralNetwork2 as nn
-from agent import Agent
+import neural.neuralNetwork2 as nn
+from neural.agent import Agent
 from gymnasium import Env, Wrapper, ObservationWrapper
-from wrappers_mario import apply_wrappers, CropObservation, BinaryPongObservation, TransposeObservation
+from saves.mario.wrappers_mario import apply_wrappers, CropObservation, BinaryPongObservation, TransposeObservation
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 import time
 

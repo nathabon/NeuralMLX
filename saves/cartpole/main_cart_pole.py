@@ -1,5 +1,5 @@
-from agent import Agent
-import neuralNetwork2 as nn
+from neural.agent import Agent
+import neural.neuralNetwork2 as nn
 import gymnasium as gym
 import numpy as np
 import mlx.core as mx

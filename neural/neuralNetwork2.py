@@ -1,9 +1,9 @@
 import mlx.core as mx
-from other import *
+from neural.other import *
 from typing import Callable
 import random
 import time
-from neuralLayers import *
+from neural.neuralLayers import *
 import h5py
 
 
@@ -108,9 +108,9 @@ class NeuralNetwork:
             first_backward = False
 
 
-    def updateWeights(self, learningRate):
+    def updateWeights(self, learningRate: float, optimizer: str = "sgd"):
         for layer in self.layers:
-            layer.update(learningRate)
+            layer.update(learningRate, optimizer)
 
     def __call__(self, vector: mx.array) -> mx.array:
         last = vector

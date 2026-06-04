@@ -18,10 +18,10 @@ import gymnasium as gym
 from PIL import Image
 from collections import deque
 
-from neuralNetwork2 import NeuralNetwork
-from neuralLayers import Layer
-from other import ReLU, fx
-from agent import Agent
+from neural.neuralNetwork2 import NeuralNetwork
+from neural.neuralLayers import Layer
+from neural.other import ReLU, fx
+from neural.agent import Agent
 import ale_py
 
 
@@ -44,8 +44,9 @@ MIN_REPLAY    = 10_000      # steps avant le 1er apprentissage
 REPLAY_CAP    = 50_000
 
 LEARN_EVERY   = 4           # apprendre tous les N env-steps
-MAX_STEPS     = 5_000_000
-SAVE_EVERY    = 100         # sauvegarder tous les N épisodes
+MAX_STEPS     = 20_000_000
+SAVE_EVERY    = 500         # sauvegarder tous les N épisodes
+SAVE_PATH     = "saves/pong/"
 
 
 # ─── Preprocessing ────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ def train(resume_path: str | None = None):
         min_replay_size   = MIN_REPLAY,
     )
     # On remplace le ReplayBuffer par la capacité voulue
-    from agent import ReplayBuffer
+    from neural.agent import ReplayBuffer
     agent.replay_buffer = ReplayBuffer(capacity=REPLAY_CAP, state_shape=(FRAME_H, FRAME_W, STACK_N))
 
 
@@ -286,7 +287,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.cmd == "train":
-        train(resume_path="pong_dqn_final.h5")
+        train(resume_path="pong_dqn_final2.h5")
     elif args.cmd == "eval":
         evaluate(args.model, n_episodes=args.episodes, render=not args.no_render)
     else:

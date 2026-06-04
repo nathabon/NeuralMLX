@@ -1,8 +1,8 @@
 import gymnasium as gym
 import numpy as np
 import mlx.core as mx
-import neuralNetwork2 as nn
-from agent import Agent
+import neural.neuralNetwork2 as nn
+from neural.agent import Agent
 
 
 
@@ -35,15 +35,15 @@ def get_network(shape, n_actions):
     ])
 
 
-env = gym.make("CarRacing-v3", continuous=False)#, render_mode="human")
+env = gym.make("CarRacing-v3", continuous=False, render_mode="human")
 
 print("observation:", env.observation_space)
 print("action:", env.action_space)
 
 
 
-network = get_network(env.observation_space.shape, 5)
-# network = nn.NeuralNetwork.fromFileH5("saves/car/train.h5")
+# network = get_network(env.observation_space.shape, 5)
+network = nn.NeuralNetwork.fromFileH5("saves/car/train.h5")
 
 agent = Agent(
     input_dim=env.observation_space.shape,
@@ -56,7 +56,8 @@ agent = Agent(
     sync_network_rate=1_000,
     batch_size=64,
     min_replay_size=5000,
-    state_preprocess=image_preprocess
+    state_preprocess=image_preprocess,
+    state_shape=env.observation_space.shape
 )
 
 def main():
@@ -69,7 +70,7 @@ def main():
         frame = 0
 
         while not done:
-            # env.render()
+            env.render()
             env_action = agent.choose_action(state)
             # env_action = DISCRETE_ACTIONS[action_idx]
 

@@ -30,10 +30,10 @@ import gymnasium as gym
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 from nes_py.wrappers import JoypadSpace
 
-from neuralNetwork2 import NeuralNetwork
-from neuralLayers import Layer
-from other import ReLU, fx
-from agent import Agent, ReplayBuffer
+from neural.neuralNetwork2 import NeuralNetwork
+from neural.neuralLayers import Layer
+from neural.other import ReLU, fx
+from neural.agent import Agent, ReplayBuffer
 
 
 # ─── Hyperparamètres ─────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ MIN_REPLAY    = 10_000
 REPLAY_CAP    = 50_000
 
 LEARN_EVERY   = 4
-MAX_STEPS     = 10_000_000
+MAX_STEPS     = 50_000_000
 SAVE_EVERY    = 50
 
 
@@ -326,18 +326,21 @@ def evaluate(model_path: str, n_episodes: int = 5, world: int = 1, stage: int = 
     print(f"\nÉvaluation de {model_path} — monde {world}-{stage}")
 
     for ep in range(1, n_episodes + 1):
-        obs          = env.reset()
+        obs, _       = env.reset()
         state        = stacker.reset(obs)
         total_reward = 0.0
         done         = False
         max_x        = 0
 
         while not done:
+            if render:
+                env.render()
             obs_mx = mx.array(state[np.newaxis], dtype=mx.float32)
             q_vals = network(obs_mx)
             action = int(mx.argmax(q_vals).item())
 
-            next_obs, reward, done, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             state         = stacker.push(next_obs)
             total_reward += reward
             max_x         = max(max_x, info.get("x_pos", 0))

@@ -1,4 +1,9 @@
+# ignore settings
+__pycache__
+.*
+
 # ignore datasets
 **/datasets
 
-# Ignore all hiden files
+# ignore saves set
+save-set*.h5

@@ -1,6 +1,6 @@
 import mlx.core as mx
 import numpy as np
-import neuralNetwork2 as nn
+import neural.neuralNetwork2 as nn
 import h5py
 import time
 
@@ -46,7 +46,7 @@ class ReplayBuffer:
         return self.size
     
 class Agent:
-    def __init__(self, input_dim, num_actions: int, network: nn.NeuralNetwork, learning_rate: float = 0.001, gamma: float = 0.9, epsilon: float = 1.0, epsilon_decay: float = 0.9991, sync_network_rate: int = 10_000, batch_size: int = 32, min_replay_size: int = 3000, state_preprocess=None):
+    def __init__(self, input_dim, num_actions: int, network: nn.NeuralNetwork, learning_rate: float = 0.001, gamma: float = 0.9, epsilon: float = 1.0, epsilon_decay: float = 0.9991, sync_network_rate: int = 10_000, batch_size: int = 32, min_replay_size: int = 3000, state_preprocess=None, state_shape = (84, 84, 4)):
         self.input_dim = input_dim
         self.num_actions = num_actions
         self.learn_every = 4
@@ -73,7 +73,7 @@ class Agent:
         self.sync_networks(force=True)
 
         # Replay buffer
-        self.replay_buffer = ReplayBuffer(capacity=50_000, state_shape=(84, 84, 4))
+        self.replay_buffer = ReplayBuffer(capacity=50_000, state_shape=input_dim)
 
     # @classmethod 
     # def fromH5(cls, filename)
@@ -124,7 +124,7 @@ class Agent:
         next_q_target = self.target_network(next_states)
         return next_q_target[mx.arange(self.batch_size), next_actions]
     
-    def learn(self):
+    def learn(self, optimizer: str = "adam"):
         if len(self.replay_buffer) < self.min_replay_size:
             return
 
@@ -161,7 +161,7 @@ class Agent:
             print("loss before:", float(loss_before.item()))
 
         self.online_network.getDelta(delta_full, None) # type: ignore
-        self.online_network.updateWeights(self.alpha)
+        self.online_network.updateWeights(self.alpha, optimizer=optimizer)
         # t_graph = time.perf_counter() - t0
 
         # t0 = time.perf_counter()

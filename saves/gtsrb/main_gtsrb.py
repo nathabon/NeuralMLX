@@ -2,7 +2,7 @@ import os
 import h5py
 import fidle
 
-import neuralNetwork2 as nn
+import neural.neuralNetwork2 as nn
 import mlx.core as mx
 
 
