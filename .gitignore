@@ -1,9 +1,11 @@
 # ignore settings
-**/__pycache__
-.*
+__pycache__/
+*.pyc
+.vscode/
+.ipynb_checkpoints/
 
 # ignore datasets
 **/datasets
 
 # ignore saves set
-save-set*.h5
+saves/*/save-set*.h5

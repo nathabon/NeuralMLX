@@ -195,9 +195,9 @@ class NeuralLayer(Layer):
 
         # Mise à jour des moments
         self._m_w = beta1 * self._m_w + (1 - beta1) * self.grad_weights
-        self._v_w = beta2 * self._v_w + (1 - beta2) * self.grad_weights ** 2
-        self._m_b = beta1 * self._m_b + (1 - beta1) * self.grad_biais
-        self._v_b = beta2 * self._v_b + (1 - beta2) * self.grad_biais ** 2
+        self._v_w = beta2 * self._v_w + (1 - beta2) * self.grad_weights ** 2 # type: ignore
+        self._m_b = beta1 * self._m_b + (1 - beta1) * self.grad_biais # type: ignore
+        self._v_b = beta2 * self._v_b + (1 - beta2) * self.grad_biais ** 2 # type: ignore
 
         # Correction du biais (indispensable au début)
         t = self._t
@@ -321,7 +321,7 @@ class ConvolutionalLayer(Layer):
             self._v = mx.zeros_like(self.grad)
 
         self._m = beta1 * self._m + (1 - beta1) * self.grad
-        self._v = beta2 * self._v + (1 - beta2) * self.grad ** 2
+        self._v = beta2 * self._v + (1 - beta2) * self.grad ** 2 # type: ignore
 
         m_hat = self._m / (1 - beta1 ** self._t)
         v_hat = self._v / (1 - beta2 ** self._t)

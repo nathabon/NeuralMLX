@@ -1,15 +1,3 @@
-"""
-Pong DQN — NeuralCPy + MLX, sans librairie d'apprentissage.
-
-Architecture : CNN standard DQN (Mnih et al., 2015)
-  (B, 84, 84, 4) → Conv(8×8, s4) → Conv(4×4, s2) → Conv(3×3, s1)
-                 → Flatten → Dense(512) → Dense(num_actions)
-
-Installation :
-    pip install "gymnasium[atari]" ale-py pillow
-    pip install autorom[accept-rom-license]   # accepte les ROMs Atari
-"""
-
 import time
 import argparse
 import numpy as np
@@ -18,9 +6,8 @@ import gymnasium as gym
 from PIL import Image
 from collections import deque
 
-from neural.neuralNetwork2 import NeuralNetwork
-from neural.neuralLayers import Layer
-from neural.other import ReLU, fx
+# import neural.neuralNetwork2 as nn
+from neural.neuralNetwork2 import *
 from neural.agent import Agent
 import ale_py
 
@@ -58,7 +45,7 @@ def preprocess_frame(frame: np.ndarray) -> np.ndarray:
     """
     img = Image.fromarray(frame).convert("L")       # niveaux de gris
     img = img.crop((0, 34, 160, 205))               # recadrage carré 160×160
-    img = img.resize((FRAME_W, FRAME_H), Image.BILINEAR)
+    img = img.resize((FRAME_W, FRAME_H), Image.BILINEAR) # type: ignore
     return np.asarray(img, dtype=np.float32) / 255.0
 
 
@@ -118,7 +105,7 @@ def build_dqn(num_actions: int) -> NeuralNetwork:
 
 def train(resume_path: str | None = None):
     env = gym.make("ALE/Pong-v5", render_mode=None)
-    num_actions = env.action_space.n    # 6 pour Pong
+    num_actions = env.action_space.n    # type: ignore # 6 pour Pong
     print(f"Environnement  : ALE/Pong-v5  —  {num_actions} actions")
 
     # Réseau
@@ -181,11 +168,11 @@ def train(resume_path: str | None = None):
                 next_state = stacker.push(next_obs)
 
                 # Reward clipping DQN standard : signe du score
-                clipped_reward = float(np.clip(reward, -1.0, 1.0))
+                clipped_reward = float(np.clip(reward, -1.0, 1.0)) # type: ignore
 
                 agent.store_in_memory(state, action, clipped_reward, next_state, done)
                 state           = next_state
-                episode_reward += reward        # log du vrai score
+                episode_reward += reward        # type: ignore # log du vrai score
                 total_steps    += 1
 
                 # ── Apprentissage ─────────────────────────────────────────
@@ -230,7 +217,7 @@ def evaluate(model_path: str, n_episodes: int = 10, render: bool = True):
     """
     render_mode = "human" if render else None
     env = gym.make("ALE/Pong-v5", render_mode=render_mode)
-    num_actions = env.action_space.n
+    num_actions = env.action_space.n # type: ignore
 
     network = NeuralNetwork.fromFileH5(model_path)
     network.freeze()    # désactive le mode training → pas d'accumulation de grads
@@ -258,7 +245,7 @@ def evaluate(model_path: str, n_episodes: int = 10, render: bool = True):
             next_obs, reward, terminated, truncated, _ = env.step(action)
             done          = terminated or truncated
             state         = stacker.push(next_obs)
-            total_reward += reward
+            total_reward += reward # type: ignore
 
         scores.append(total_reward)
         print(f"  Épisode {ep:3d} | score : {total_reward:+.1f}")
@@ -292,4 +279,4 @@ if __name__ == "__main__":
         evaluate(args.model, n_episodes=args.episodes, render=not args.no_render)
     else:
         # Par défaut : entraîner
-        train("pong_dqn_final.h5")
+        train(None)

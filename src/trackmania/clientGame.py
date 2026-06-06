@@ -4,6 +4,7 @@ import time
 import signal
 from tminterface.structs import SimStateData, CheckpointData, PlayerInfoStruct
 from enum import IntEnum
+import numpy as np
 
 class GameSignal(IntEnum):
     SC_RUN_STEP_SYNC = 0
@@ -106,9 +107,32 @@ class TMNF:
         return self.state.scene_mobil
     
     @property
-    def pos(self):
+    def position(self):
         return self.state.position
 
     @property
     def display_speed(self):
         return self.state.display_speed
+    
+def dist(p):
+    return np.sqrt(np.sum(p**2))
+
+def get_dist_to_centerline(P: np.ndarray, points: list[np.ndarray]):
+    """Get the closest point in points compared to P"""
+    d_min = -1
+    d_pos = np.array([0, 0, 0])
+    for i in range(len(points) - 1):
+        A = points[i]
+        B = points[i+1]
+        AB = B - A
+
+        t = np.sum(P * AB)
+        t = min(1, max(0, t))
+        T = A + AB * t
+        d = dist(T - P)
+
+        if d_min == 1 or d < d_min:
+            d_min = d
+            d_pos = T
+    
+    return d_min, d_pos

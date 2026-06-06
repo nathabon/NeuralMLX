@@ -4,7 +4,7 @@ import mlx.core as mx
 import neural.neuralNetwork2 as nn
 from neural.agent import Agent
 from gymnasium import Env, Wrapper, ObservationWrapper
-from saves.mario.wrappers_mario import apply_wrappers, CropObservation, BinaryPongObservation, TransposeObservation
+from mario.wrappers_mario import apply_wrappers, CropObservation, BinaryPongObservation, TransposeObservation
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 import time
 

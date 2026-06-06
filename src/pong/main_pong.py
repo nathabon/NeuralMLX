@@ -1,4 +1,4 @@
-from saves.mario.wrappers_mario import apply_wrappers, CropObservation
+from mario.wrappers_mario import apply_wrappers, CropObservation
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
 import mlx.core as mx
@@ -8,7 +8,7 @@ import ale_py
 
 def app_wrappers(env):
     env = CropObservation(env, 35, 16, 0, 0)
-    # return env
+    
     return apply_wrappers(env)
 
 
@@ -42,8 +42,8 @@ print(f"env shape : {env.observation_space.shape}")
 state, _ = env.reset()
 
 
-net = getNetwork(env.observation_space.shape, 6)
-# net = nn.NeuralNetwork.fromFileH5("saves/pong/train.h5")
+# net = getNetwork(env.observation_space.shape, 6)
+net = nn.NeuralNetwork.fromFileH5("saves/pong/train.h5")
 
 n_actions = env.action_space.n
 

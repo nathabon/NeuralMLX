@@ -1,4 +1,4 @@
-from saves.mario.wrappers_mario import apply_wrappers
+from mario.wrappers_mario import apply_wrappers
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
 import mlx.core as mx

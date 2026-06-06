@@ -1,4 +1,4 @@
-from saves.mario.wrappers_mario import apply_wrappers
+from mario.wrappers_mario import apply_wrappers
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
 import mlx.core as mx
@@ -31,7 +31,7 @@ def getNetwork(shape, n_actions):
 NUM_OF_EPISODES = 50000
 
 env = gym.make('SuperMarioBros-1-1-v0')#, render_mode="human")
-env = JoypadSpace(env, RIGHT_ONLY)
+env = JoypadSpace(env, RIGHT_ONLY) # type: ignore
 env = apply_wrappers(env)
 
 print(f"env shape : {env.observation_space.shape}")
