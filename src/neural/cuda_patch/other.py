@@ -1,4 +1,4 @@
-import backend_cupy as mx
+import src.neural.cuda_patch.backend_cupy as mx
 from collections.abc import Callable
 
 def fx(X) -> mx.array:

@@ -1,7 +1,7 @@
-import backend_cupy as mx
+from . import backend_cupy as mx
 import numpy as np
 from collections.abc import Callable
-from other import *
+from .other import *
 import h5py
 
 def no_grad(func):

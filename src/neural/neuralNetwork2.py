@@ -1,9 +1,10 @@
-import mlx.core as mx
+# import mlx.core as mx
+from neural import mx
 from neural.other import *
-from typing import Callable
+from neural.neuralLayers import *
+
 import random
 import time
-from neural.neuralLayers import *
 import h5py
 
 

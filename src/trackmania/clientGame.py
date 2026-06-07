@@ -48,7 +48,7 @@ class TMNF:
 
     def send_data(self, fmt: str | bytes, /, *v):
         """Send data with type"""
-        self.send_data(struct.pack(fmt, v))
+        self.sendall(struct.pack(fmt, v))
     
     def send_signal(self, signal: int):
         """Send signal"""
@@ -117,22 +117,24 @@ class TMNF:
 def dist(p):
     return np.sqrt(np.sum(p**2))
 
-def get_dist_to_centerline(P: np.ndarray, points: list[np.ndarray]):
-    """Get the closest point in points compared to P"""
-    d_min = -1
-    d_pos = np.array([0, 0, 0])
-    for i in range(len(points) - 1):
-        A = points[i]
-        B = points[i+1]
-        AB = B - A
 
-        t = np.sum(P * AB)
-        t = min(1, max(0, t))
-        T = A + AB * t
-        d = dist(T - P)
 
-        if d_min == 1 or d < d_min:
-            d_min = d
-            d_pos = T
-    
-    return d_min, d_pos
+def get_dist_to_centerline(P: np.ndarray, points: np.ndarray) -> tuple[float, np.ndarray]:
+    """
+    P      : position voiture (3,)
+    points : centerline (N, 3)
+    Retourne (dist_center, closest_point)
+    """
+    A  = points[:-1]                                       # (N-1, 3)
+    B  = points[1:]                                        # (N-1, 3)
+    AB = B - A                                             # (N-1, 3)
+
+    t  = np.einsum('ij,ij->i', P - A, AB)                 # (N-1,)
+    t /= np.einsum('ij,ij->i', AB, AB) + 1e-8             # (N-1,)
+    t  = np.clip(t, 0.0, 1.0)                             # (N-1,)
+
+    T     = A + t[:, None] * AB                           # (N-1, 3)
+    dists = np.linalg.norm(T - P, axis=1)                 # (N-1,)
+    idx   = np.argmin(dists)
+
+    return float(dists[idx]), T[idx]
