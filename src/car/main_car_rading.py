@@ -1,7 +1,7 @@
 from mario.wrappers_mario import apply_wrappers
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
-import mlx.core as mx
+from neural import mx
 import gymnasium as gym
 import numpy as np
 
@@ -44,7 +44,7 @@ net = getNetwork(env.observation_space.shape, len(DISCRETE_ACTIONS))
 # net = nn.NeuralNetwork.fromFileH5("saves/mario/train3.h5")
 
 
-agent = Agent(input_dim=env.observation_space.shape, num_actions=len(DISCRETE_ACTIONS), network=net, learning_rate=0.005)
+agent = Agent(input_shape=env.observation_space.shape, num_actions=len(DISCRETE_ACTIONS), network=net, learning_rate=0.005)
 
 
 print("Commence")

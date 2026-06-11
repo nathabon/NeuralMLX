@@ -184,7 +184,7 @@ network = get_network(4)
 # network = nn.NeuralNetwork.fromFileH5("car/train.h5")
 
 agent = Agent(
-    input_dim=(5,),
+    input_shape=(5,),
     num_actions=4,
     network=network,
     learning_rate=0.0005,

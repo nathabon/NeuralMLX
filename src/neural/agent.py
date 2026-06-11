@@ -1,31 +1,46 @@
-import mlx.core as mx
+from neural import mx
 import numpy as np
 import neural.neuralNetwork2 as nn
 import h5py
 import time
 
-from collections import deque
+def to_numpy(a, dtype):
+    if isinstance(a, np.ndarray):
+        return a
+    return np.array(a, dtype=dtype)
+
+def get_tot(shape: tuple):
+    if len(shape) == 1:
+        return shape[0]
+    return shape[0] * get_tot(shape[1:])
 
 class ReplayBuffer:
-    def __init__(self, capacity: int, state_shape: tuple):
+    def __init__(self, capacity: int, state_shape: tuple, state_dtype: type = np.float16, action_dtype: type = np.uint8):
         self.capacity = capacity
         self.size     = 0
-        self.ptr      = 0  # index d'écriture circulaire
+        self.ptr      = 0
+
+        self.state_dtype = state_dtype
+        self.action_dtype = action_dtype
+
 
         # Pré-allocation : un array numpy par champ
-        self.states      = np.zeros((capacity, *state_shape), dtype=np.float16)
-        self.next_states = np.zeros((capacity, *state_shape), dtype=np.float16)
-        self.actions     = np.zeros((capacity,),              dtype=np.int32)
-        self.rewards     = np.zeros((capacity,),              dtype=np.float32)
-        self.dones       = np.zeros((capacity,),              dtype=np.float32)
+        self.states      = np.zeros((capacity, *state_shape), dtype=state_dtype)
+        self.next_states = np.zeros((capacity, *state_shape), dtype=state_dtype)
+        self.actions     = np.zeros((capacity,),              dtype=action_dtype)
+        self.rewards     = np.zeros((capacity,),              dtype=np.float16)
+        self.dones       = np.zeros((capacity,),              dtype=np.bool)
+
+        size = self.states.nbytes + self.next_states.nbytes + self.actions.nbytes + self.rewards.nbytes + self.dones.nbytes
+        print(size / 1024**3)
+
 
     def add(self, state, action, reward, next_state, done):
-        # Écriture à ptr, wrap-around automatique
-        self.states     [self.ptr] = state
-        self.next_states[self.ptr] = next_state
-        self.actions    [self.ptr] = action
-        self.rewards    [self.ptr] = reward
-        self.dones      [self.ptr] = done
+        self.states     [self.ptr] = to_numpy(state, self.state_dtype)
+        self.next_states[self.ptr] = to_numpy(next_state, self.state_dtype)
+        self.actions    [self.ptr] = to_numpy(action, self.action_dtype)
+        self.rewards    [self.ptr] = float(reward)
+        self.dones      [self.ptr] = bool(done)
 
         self.ptr  = (self.ptr + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
@@ -33,21 +48,21 @@ class ReplayBuffer:
     def sample(self, batch_size: int) -> dict:
         indices = np.random.randint(0, self.size, size=batch_size)
 
-        # Une seule indexation numpy — pas de boucle Python, pas de stack
         return {
-            "state":      mx.array(self.states     [indices], dtype=mx.float32),
-            "next_state": mx.array(self.next_states[indices], dtype=mx.float32),
-            "action":     mx.array(self.actions    [indices], dtype=mx.int32),
-            "reward":     mx.array(self.rewards    [indices], dtype=mx.float32),
-            "done":       mx.array(self.dones      [indices], dtype=mx.float32),
+            "state":      mx.array(self.states     [indices], dtype=mx.float16),
+            "next_state": mx.array(self.next_states[indices], dtype=mx.float16),
+            "action":     mx.array(self.actions    [indices], dtype=mx.uint8),
+            "reward":     mx.array(self.rewards    [indices], dtype=mx.float16),
+            "done":       mx.array(self.dones      [indices], dtype=mx.bool_),
         }
 
     def __len__(self):
         return self.size
     
 class Agent:
-    def __init__(self, input_dim, num_actions: int, network: nn.NeuralNetwork, learning_rate: float = 0.001, gamma: float = 0.9, epsilon: float = 1.0, epsilon_decay: float = 0.9991, sync_network_rate: int = 10_000, batch_size: int = 32, min_replay_size: int = 3000, state_preprocess=None, state_shape = (84, 84, 4)):
-        self.input_dim = input_dim
+    def __init__(self, 
+                 input_shape, num_actions: int, network: nn.NeuralNetwork, learning_rate: float = 0.001, gamma: float = 0.9, epsilon: float = 1.0, epsilon_decay: float = 0.9991, sync_network_rate: int = 10_000, batch_size: int = 32, min_replay_size: int = 3000, buffer_capacity: int = 50_000, state_preprocess = None, state_buffer_shape: tuple | None = None, state_dtype: type = np.float16, action_dtype: type = np.uint8):
+        self.input_shape = input_shape
         self.num_actions = num_actions
         self.learn_every = 4
         self.env_step_counter = 0
@@ -64,6 +79,7 @@ class Agent:
         self.sync_network_rate = sync_network_rate
 
         self.state_preprocess = state_preprocess or (lambda x: x)
+        self.state_buffer_shape = self.input_shape if state_buffer_shape is None else state_buffer_shape
 
         # Networks
         self.online_network = network
@@ -73,7 +89,7 @@ class Agent:
         self.sync_networks(force=True)
 
         # Replay buffer
-        self.replay_buffer = ReplayBuffer(capacity=50_000, state_shape=input_dim)
+        self.replay_buffer = ReplayBuffer(capacity=buffer_capacity, state_shape=self.state_buffer_shape, state_dtype=state_dtype, action_dtype=action_dtype)
 
     # @classmethod 
     # def fromH5(cls, filename)
@@ -83,7 +99,7 @@ class Agent:
     def choose_action(self, observation):
         if np.random.random() < self.epsilon:
             return np.random.randint(self.num_actions)
-        obs = mx.array(observation, dtype=mx.float32)
+        obs = mx.array(observation, dtype=mx.float16)
         obs = self.state_preprocess(obs)
         output = self.online_network(obs)
         return int(mx.argmax(output).item())
@@ -92,13 +108,13 @@ class Agent:
         self.epsilon = max(self.epsilon * self.eps_decay, self.eps_min)
 
     def store_in_memory(self, state, action, reward, next_state, done):
-        self.replay_buffer.add(
-            np.asarray(state,      dtype=np.float16),
-            int(action),
-            float(reward),
-            np.asarray(next_state, dtype=np.float16),
-            bool(done)
-        )
+        self.replay_buffer.add(state, action, reward, next_state, done)
+        #     np.asarray(state,      dtype=np.float16),
+        #     int(action),
+        #     float(reward),
+        #     np.asarray(next_state, dtype=np.float16),
+        #     bool(done)
+        # )
 
     def sync_networks(self, force=False):
         if force or (self.learn_step_counter % self.sync_network_rate == 0 and self.learn_step_counter > 0):
@@ -133,7 +149,7 @@ class Agent:
         self.sync_networks()
 
         samples     = self.replay_buffer.sample(self.batch_size)
-        states = self.state_preprocess(samples["state"])
+        states      = self.state_preprocess(samples["state"])
         actions     = samples["action"]
         actions     = actions.astype(mx.int32)
         rewards     = samples["reward"]

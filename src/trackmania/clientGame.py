@@ -2,19 +2,53 @@ import socket
 import struct
 import time
 import signal
-from tminterface.structs import SimStateData, CheckpointData, PlayerInfoStruct
+from tminterface.structs import SimStateData, CheckpointData
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 from enum import IntEnum
 import numpy as np
+import gymnasium as gym
 
-class GameSignal(IntEnum):
+
+class SocketMessageType(IntEnum):
     SC_RUN_STEP_SYNC = 0
     C_SET_SPEED = 1
     C_REWIND_TO_STATE = 2
     C_SET_INPUT_STATE = 3
     C_SHUTDOWN = 4
+    C_SET_TRACK = 5
+
+
+class ObservationType(IntEnum):
+    POSITION                    = 0
+    DISPLAY_SPEED               = 1
+    VELOCITY                    = 2
+    INPUTS                      = 3
+
+    DISTANCE_TO_CENTERLINE      = 4
+    PROGRESS_ON_TRACK           = 5
+    DIRECTION_VERSUS_CENTERINE  = 6
+    DISTANCE_TO_NEXT_CHECKPOINT = 7
+
+
+def getObservationTypeBox(obs: ObservationType):
+    boxes = [
+        ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Position
+        ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Display speed
+        ([0], [1000]),                                           # Velocity
+        ([0, 0, -65536], [65536, 65536, 65536]),                 # Inputs
+        ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Distance to centerline
+        ([0], [1]),                                              # Progress on track
+        ([-1, -1, -1], [1, 1, 1]),                               # Direction versus centerline
+        ([0], [np.inf]),                                         # Distance no next chekpoint
+    ]
+
+    return boxes[obs]
+
+
 
 #MARK: TMNF
-class TMNF:
+class TMNF(gym.Env):
     """
     Main class of the game. 
     """
@@ -25,22 +59,27 @@ class TMNF:
 
     state: SimStateData
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8477) -> None:
-        self.host = host
-        self.port = port
+    def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         signal.signal(signal.SIGINT, self.signal_handler)
 
+        self.first_state = None
         self.state = None # type: ignore
+
+
 
     # -----------------------
     # MARK: Signal and socket
     # -----------------------
 
-    def connect_socket(self):
+    def connect_socket(self, host: str = "127.0.0.1", port: int = 8477):
         """Connect socket to (host, port)"""
-        self.sock.connect((self.host, self.port))
-        print("Connected")
+        self.sock.connect((host, port))
+        print("Connected to socket")
+
+    def close_socket(self):
+        """Shutdown and close socket"""
+        self.sock.close()
 
     def sendall(self, data):
         """Send to socket"""
@@ -57,24 +96,37 @@ class TMNF:
     def signal_handler(self, sig, frame):
         """Send shutdown signal"""
         print('Shutting down...')
-        self.send_signal(GameSignal.C_SHUTDOWN)
+        self.send_signal(SocketMessageType.C_SHUTDOWN)
         self.sock.close()
+
+    def set_track(self, track_name: str):
+        self.send_signal(SocketMessageType.C_SET_TRACK)
+        self.send_data('s', track_name)
 
     def rewind_to_state(self, state):
         """Sent state to rewind"""
-        self.send_signal(GameSignal.C_REWIND_TO_STATE)
+        self.send_signal(SocketMessageType.C_REWIND_TO_STATE)
         self.send_data('i', len(state.data))
         self.sendall(state.data)
 
-    def set_input_state(self, up: int | bool = -1, down: int | bool = -1, steer: int | float = 0x7FFFFFFF):
+    def set_input_state(self, up: int | bool = False, down: int | bool = False, steer: int | float = 0x0):
         """Send car control"""
-        if isinstance(steer, float):
-            steer = int(steer * 0x7FFFFFFF)
+        if isinstance(steer, float) and int(steer) >= -1 and int(steer) <= 1:
+            steer = int(steer * 0x10000)
+
+        if isinstance(up, int):
+            up = up >= 19661
+        if isinstance(down, int):
+            down = down >= 19661
         
-        self.send_signal(GameSignal.C_SET_INPUT_STATE)
+        self.send_signal(SocketMessageType.C_SET_INPUT_STATE)
         self.send_data('b', up)
         self.send_data('b', down)
         self.send_data('i', steer)
+
+    def set_sim_speed(self, speed: float = 5.0):
+        self.send_signal(SocketMessageType.C_SET_SPEED)
+        self.send_data('f', speed)
 
     def _recv(self, bufsize: int, flags: int = 0):
         """Receive the signal sent by the game"""
@@ -102,6 +154,10 @@ class TMNF:
     def player_info(self):
         return self.state.player_info
     
+    # @property
+    # def in_race(self):
+    #     return self
+
     @property
     def car(self):
         return self.state.scene_mobil
@@ -114,8 +170,77 @@ class TMNF:
     def display_speed(self):
         return self.state.display_speed
     
-def dist(p):
-    return np.sqrt(np.sum(p**2))
+    @property
+    def velocity(self):
+        return self.state.velocity
+
+
+    @property
+    def is_running(self):
+        return True
+    
+    #
+    # MARK: Env
+    #
+    def get_state(self, max_try: int = 1_000):
+        i = 0
+        while i < max_try:
+            msg_type = self.recv(4)[0]
+            if msg_type == SocketMessageType.SC_RUN_STEP_SYNC:
+                state = self.recv_state()
+                return state
+            i += 1
+
+        raise ValueError("Socket seems to be disconedted")
+
+
+    def _get_obs(self, observations: list[ObservationType] = [ObservationType.POSITION]):
+        pass
+
+    def _get_info(self) -> dict[str, Any]: # type: ignore
+        pass
+
+    def make_env(self, track_name: str, reward: Callable[[SimStateData, np.ndarray], float], steering_values = [0, 1], observations: list[ObservationType] = [ObservationType.POSITION]):
+        self.action_space = gym.spaces.Box(low=np.array([0, 0, -65536]), high=np.array([65536, 65536, 65536]), dtype=np.int32)
+
+        low = []
+        high = []
+        for obs in observations:
+            l, h = getObservationTypeBox(obs)
+            low += l
+            high += h
+        self.observation_space = gym.spaces.Box(low=np.array(low), high=np.array(high))
+
+        self.compute_reward = reward
+        self.observations = observations
+
+    def reset_env(self, track_name: str, observations: list[ObservationType] = [ObservationType.POSITION], seed: int | None = None, options: dict[str, Any] | None = None):
+        super().reset(seed=seed)
+        self.set_track(track_name)
+
+        obs = self._get_obs(observations)
+        info = self._get_info()
+
+        return obs, info
+
+    def step(self, action):
+        if not self.action_space.contains(action):
+            raise ValueError("Cette action n'est pas possible. Il faut gaz € [0, 65526], brake € [0, 65536] et steer € [-65526, 65526]")
+        
+        gaz, brake, steer = action
+        self.set_input_state(gaz, brake, steer)
+
+        self.state = self.get_state()
+
+        reward = self.compute_reward(self.state, action)
+        terminated = not self.player_info.finish_not_passed # type: ignore
+        truncated = terminated
+
+        obs = self._get_obs(self.observations)
+        info = self._get_info()
+
+        return obs, reward, terminated, truncated, info
+
 
 
 

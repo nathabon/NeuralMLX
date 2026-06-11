@@ -3,61 +3,48 @@ import numpy as np
 from neural import mx
 import neural.neuralNetwork2 as nn
 from neural.agent import Agent
+from itertools import product
+import numpy as np
 
 
-
-def image_preprocess(x):
-    x = mx.array(x, dtype=mx.float32)
-
-    if len(x.shape) == 3:
-        x = x.reshape(1, *x.shape)
-
-    return x / 255.0
-
+def image_preprocess(x: mx.array):
+    return x
 
 def get_network(shape, n_actions):
-    H, W, C = shape
-
-    conv_layers = nn.NeuralNetwork([
-        nn.Layer.Conv2d(C, 16, 8, 8, nn.ReLU, stride=4),
-        nn.Layer.Conv2d(16, 32, 4, 4, nn.ReLU, stride=2),
-        nn.Layer.Conv2d(32, 32, 3, 3, nn.ReLU, stride=1),
-    ])
-
-    dummy = mx.zeros((1, H, W, C))
-    dummy_out = conv_layers(dummy)
-    flat_dim = dummy_out.shape[1] * dummy_out.shape[2] * dummy_out.shape[3]
-
-    return nn.NeuralNetwork(conv_layers.layers + [
-        nn.Layer.Flatten(),
-        nn.Layer.Linear(flat_dim, 256, nn.ReLU),
+    n = shape[0]
+    print(n)
+    return nn.NeuralNetwork([
+        nn.Layer.Linear(int(n), 256, nn.ReLU),
+        nn.Layer.Linear(256, 256, nn.ReLU),
         nn.Layer.Linear(256, n_actions, nn.fx)
     ])
 
 
-env = gym.make("CarRacing-v3", continuous=False, render_mode="human")
+env = gym.make("LunarLander-v3", render_mode="human")
+
+
 
 print("observation:", env.observation_space)
-print("action:", env.action_space)
 
 
 
-# network = get_network(env.observation_space.shape, 5)
-network = nn.NeuralNetwork.fromFileH5("saves/car/train2.h5")
+# network = get_network(env.observation_space.shape, 4)
+network = nn.NeuralNetwork.fromFileH5("saves/acrobot/train.h5")
 
 agent = Agent(
     input_shape=env.observation_space.shape,
-    num_actions=5,
+    num_actions=4,
     network=network,
     learning_rate=0.0005,
     gamma=0.99,
     epsilon=0.05,
-    epsilon_decay=0.95,
+    epsilon_decay=0.99,
     sync_network_rate=1_000,
     batch_size=64,
-    min_replay_size=5000,
-    state_preprocess=image_preprocess,
-    state_buffer_shape=env.observation_space.shape
+    min_replay_size=5_000,
+    buffer_capacity=100_000,
+    state_shape=env.observation_space.shape,
+    state_preprocess=image_preprocess
 )
 
 def main():
@@ -72,7 +59,6 @@ def main():
         while not done:
             env.render()
             env_action = agent.choose_action(state)
-            # env_action = DISCRETE_ACTIONS[action_idx]
 
             next_state, reward, terminated, truncated, info = env.step(env_action)
             done = terminated or truncated
@@ -114,7 +100,7 @@ except KeyboardInterrupt:
 
 if save:
     print("Saving data...", end="\r")
-    agent.online_network.saveH5("saves/car/train2.h5")
+    agent.online_network.saveH5("saves/acrobot/train.h5")
     print("All datas have been saved")
 
 

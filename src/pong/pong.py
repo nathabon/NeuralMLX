@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-import mlx.core as mx
+from neural import mx
 import neural.neuralNetwork2 as nn
 from neural.agent import Agent
 from gymnasium import Env, Wrapper, ObservationWrapper
@@ -123,7 +123,7 @@ def main():
         network = get_network(env.observation_space.shape, n_actions)
 
     agent = Agent(
-        input_dim=env.observation_space.shape,
+        input_shape=env.observation_space.shape,
         num_actions=n_actions,
         network=network,
         learning_rate=0.00035,

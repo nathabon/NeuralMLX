@@ -13,8 +13,7 @@ const string HOST = "127.0.0.1";
 const uint16 PORT = 8477;
 const uint RESPONSE_TIMEOUT = 2000;
 
-void WaitForResponse(MessageType type)
-{
+void WaitForResponse(MessageType type) {
     auto now = Time::Now;
 
     while (true) {
@@ -35,8 +34,7 @@ void WaitForResponse(MessageType type)
     }
 }
 
-int HandleMessage()
-{
+int HandleMessage() {
     if (clientSock.Available == 0) {
         return -1;
     }
@@ -94,8 +92,7 @@ int HandleMessage()
     return type;
 }
 
-void OnRunStep(SimulationManager@ simManager)
-{
+void OnRunStep(SimulationManager@ simManager) {    
     if (@clientSock is null) {
         return;
     }
@@ -109,16 +106,14 @@ void OnRunStep(SimulationManager@ simManager)
     WaitForResponse(MessageType::SCRunStepSync);
 }
 
-void Main()
-{
+void Main() {
     if (@sock is null) {
         @sock = Net::Socket();
         sock.Listen(HOST, PORT);
     }
 }
 
-void Render()
-{
+void Render() {
     auto @newSock = sock.Accept(0);
     if (@newSock !is null) {
         @clientSock = @newSock;
@@ -126,12 +121,11 @@ void Render()
     }
 }
 
-PluginInfo@ GetPluginInfo()
-{
+PluginInfo@ GetPluginInfo() {
     PluginInfo info;
-    info.Author = "donadigo";
-    info.Name = "Test";
-    info.Description = "Sockets example";
-    info.Version = "1.0.0";
+    info.Author = "Nathabon";
+    info.Name = "AI";
+    info.Description = "AI Trackmania";
+    info.Version = "0.1.0";
     return info;
 }

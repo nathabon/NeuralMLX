@@ -1,5 +1,4 @@
-import mlx.core as mx
-import mlx
+from neural import mx
 import numpy as np
 from collections.abc import Callable
 from neural.other import *
@@ -82,6 +81,9 @@ class Layer:
     def update(self, learningRate: float, optimizer: str = "sgd"):
         if self.weights is not None and self.grad is not None:
             self.weights = self.weights - learningRate * self.grad
+
+    def getOutputShape(self, inputShape):
+        raise NotImplementedError(f"{type(self).__name__} doit implémenter getOutputShape")
     
     def getNbParameters(self) -> int:
         raise NotImplementedError(f"{type(self).__name__} doit implémenter getNbParameters")
@@ -220,6 +222,22 @@ class NeuralLayer(Layer):
     @property
     def dim(self):
         return self.weights.shape
+    
+    def getOutputShape(self, inputShape):
+        B = 1
+        c = 0
+        if len(inputShape) == 1:
+            c = inputShape[0]
+        elif len(inputShape) == 2:
+            B, c = inputShape
+        else:
+            raise ValueError("L'input d'une Neural Layer doit être flatten")
+        
+        if c != self.dim[1]:
+            raise ValueError(f"Ce réseau ne prend que des entrées de dimensions {self.dim[1]}, pas {c}")
+        
+        return (B, self.dim[0])
+
 
     def getNbParameters(self) -> int:
         return self.weights.shape[0] * self.weights.shape[1] + self.biais.shape[0]
@@ -284,7 +302,6 @@ class ConvolutionalLayer(Layer):
         if len(X.shape) == 3:
             X = mx.array([X])
         Z = mx.conv2d(X, self.kernel, stride=self.stride)
-        # print("Dense Z min/max:", mx.min(Z).item(), mx.max(Z).item())
         if self.training:
             self.last_X = X
             self.last_Z = Z
@@ -333,6 +350,26 @@ class ConvolutionalLayer(Layer):
             self.updateAdam(learningRate)
         else:
             self.kernel = self.kernel - learningRate * self.grad
+
+    def getOutputShape(self, inputShape):
+        B = 1
+        c_in = 1
+        if len(inputShape) == 2:
+            h, w = inputShape
+        elif len(inputShape) == 3:
+            h, w, c_in = inputShape
+        else:
+            B, h, w, c_in = inputShape
+
+        if c_in != self.kernel.shape[3]:
+            raise ValueError(f"L'entrée de cette convolution doit avoir {self.kernel.shape[3]} canaux, pas {c_in}")
+
+        c_out, kh, kw, _ = self.kernel.shape
+
+        h_out = (h - kh) // self.stride + 1
+        w_out = (w - kw) // self.stride + 1
+
+        return (B, h_out, w_out, c_out)
     
     def getNbParameters(self) -> int:
         a, b, c, d = self.kernel.shape
@@ -453,6 +490,11 @@ class PoolingLayer(Layer):
             )
 
         return grad_crop
+    
+    def getOutputShape(self, inputShape):
+        B, h, w, c_in = inputShape
+        
+        return (B, h // self.shape[0], w // self.shape[1], c_in)
 
     def getNbParameters(self) -> int:
         return 0
@@ -495,6 +537,11 @@ class FlattenLayer(Layer):
 
     def backward(self, delta):
         return delta.reshape(self.last_dim)
+    
+    def getOutputShape(self, inputShape):
+        B, h, w, c_in = inputShape
+        
+        return (B, h*w*c_in)
     
     def getNbParameters(self) -> int:
         return 0

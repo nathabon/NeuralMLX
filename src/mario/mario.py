@@ -20,7 +20,7 @@ Installation :
 import time
 import argparse
 import numpy as np
-import mlx.core as mx
+from neural import mx
 from PIL import Image
 from collections import deque
 
@@ -209,7 +209,7 @@ def train(resume_path: str | None = None, world: int = 1, stage: int = 1):
     print(f"Paramètres     : {network.getNpParameters():,}")
 
     agent = Agent(
-        input_dim         = (FRAME_H, FRAME_W, STACK_N),
+        input_shape         = (FRAME_H, FRAME_W, STACK_N),
         num_actions       = num_actions,
         network           = network,
         learning_rate     = LR,

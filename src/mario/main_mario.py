@@ -1,7 +1,7 @@
 from mario.wrappers_mario import apply_wrappers
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
-import mlx.core as mx
+from neural import mx
 import gymnasium as gym
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
@@ -40,7 +40,7 @@ net = getNetwork(env.observation_space.shape, len(RIGHT_ONLY))
 # net = nn.NeuralNetwork.fromFileH5("saves/mario/train5-1.h5")
 
 
-agent = Agent(input_dim=env.observation_space.shape, num_actions=len(RIGHT_ONLY), network=net, learning_rate=0.0001, batch_size=128, gamma=0.99)
+agent = Agent(input_shape=env.observation_space.shape, num_actions=len(RIGHT_ONLY), network=net, learning_rate=0.0001, batch_size=128, gamma=0.99)
 
 
 print("Commence")

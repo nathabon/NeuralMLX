@@ -16,17 +16,6 @@ def get_network():
     ])
 
 
-def preprocess_state(state):
-    """
-    CartPole donne un état de shape (4,).
-    Le réseau attend un batch : (B, 4).
-    """
-    state = mx.array(state, dtype=mx.float32)
-
-    if len(state.shape) == 1:
-        return state.reshape(1, 4)
-
-    return state.reshape(state.shape[0], 4)
 
 def cartpole_preprocess(x):
     x = mx.array(x, dtype=mx.float32)
@@ -62,18 +51,18 @@ def evaluate(agent, env, episodes=5):
 
 
 def main():
-    env = gym.make("CartPole-v1", render_mode="human")
+    env = gym.make("CartPole-v1")#, render_mode="human")
 
-    # network = get_network()
-    network = nn.NeuralNetwork.fromFileH5("saves/cartpole/cartpole_dqn.h5")
+    network = get_network()
+    # network = nn.NeuralNetwork.fromFileH5("saves/cartpole/cartpole_dqn.h5")
 
     agent = Agent(
-        input_dim=env.observation_space.shape,
+        input_shape=env.observation_space.shape,
         num_actions=env.action_space.n,
         network=network,
         learning_rate=0.001,
         gamma=0.99,
-        epsilon=0.05,
+        epsilon=1,
         epsilon_decay=0.9998,
         sync_network_rate=500,
         batch_size=64,
@@ -97,9 +86,7 @@ def main():
         frame = 0
 
         while not done:
-            env.render()
-            # Choix action : il faut que choose_action reshape en (1, 4)
-            # Si ton choose_action ne le fait pas, voir correction plus bas.
+            # env.render()
             action = agent.choose_action(state)
 
             next_state, reward, terminated, truncated, info = env.step(action)
@@ -119,6 +106,7 @@ def main():
             state = next_state
             total_reward += reward
             frame += 1
+        agent.decay_epsilon()
 
         scores.append(total_reward)
 

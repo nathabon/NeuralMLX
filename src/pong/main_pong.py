@@ -1,7 +1,7 @@
 from mario.wrappers_mario import apply_wrappers, CropObservation
 from neural.agent import Agent
 import neural.neuralNetwork2 as nn
-import mlx.core as mx
+from neural import mx
 import gymnasium as gym
 import ale_py
 
@@ -48,7 +48,7 @@ net = nn.NeuralNetwork.fromFileH5("saves/pong/train.h5")
 n_actions = env.action_space.n
 
 agent = Agent(
-        input_dim=env.observation_space.shape,
+        input_shape=env.observation_space.shape,
         num_actions=n_actions,
         network=net,
         learning_rate=0.0001,

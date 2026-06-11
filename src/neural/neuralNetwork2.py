@@ -1,4 +1,3 @@
-# import mlx.core as mx
 from neural import mx
 from neural.other import *
 from neural.neuralLayers import *
@@ -251,8 +250,10 @@ class NeuralNetwork:
         return sum
     
     def get_output_shape(self, input_shape):
-        mat = mx.ones(input_shape)
-        return self(mat).shape
+        for l in self.layers:
+            input_shape = l.getOutputShape(input_shape)
+        
+        return input_shape
 
 
 def get_output_shape(net: NeuralNetwork, input_shape):

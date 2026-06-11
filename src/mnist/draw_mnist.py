@@ -1,5 +1,5 @@
 import pygame
-import mlx.core as mx
+from neural import mx
 import numpy as np
 import sys
 import neural.neuralNetwork2 as nn

@@ -3,7 +3,7 @@ import h5py
 import fidle
 
 import neural.neuralNetwork2 as nn
-import mlx.core as mx
+from neural import mx
 
 
 def read_dataset(output_dir, dataset_name, scale=1):

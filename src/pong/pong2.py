@@ -1,12 +1,14 @@
 import time
 import argparse
-import numpy as np
-import mlx.core as mx
-import gymnasium as gym
+
 from PIL import Image
 from collections import deque
 
+import gymnasium as gym
+
 # import neural.neuralNetwork2 as nn
+import numpy as np
+from neural import mx
 from neural.neuralNetwork2 import *
 from neural.agent import Agent
 import ale_py
@@ -119,7 +121,7 @@ def train(resume_path: str | None = None):
     print(f"Shape de sortie: {network.get_output_shape((1, FRAME_H, FRAME_W, STACK_N))}")
 
     agent = Agent(
-        input_dim         = (FRAME_H, FRAME_W, STACK_N),
+        input_shape         = (FRAME_H, FRAME_W, STACK_N),
         num_actions       = num_actions,
         network           = network,
         learning_rate     = LR,
