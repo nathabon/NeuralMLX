@@ -1,6 +1,5 @@
 # ignore settings
 __pycache__/
-.vscode/
 ipynb_checkpoints/
 
 # ignore datasets
