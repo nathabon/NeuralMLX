@@ -1,6 +1,8 @@
 from neural import mx
-from neural.other import *
-from neural.neuralLayers import *
+from neural import other
+from neural.other import softmax, sigmoid, ReLU
+from neural import neuralLayers
+from neural.neuralLayers import Layer, NeuralLayer, ConvolutionalLayer, no_grad
 
 import random
 import time

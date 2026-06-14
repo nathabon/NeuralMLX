@@ -11,12 +11,12 @@ import gymnasium as gym
 
 
 class SocketMessageType(IntEnum):
-    SC_RUN_STEP_SYNC = 0
-    C_SET_SPEED = 1
+    SC_RUN_STEP_SYNC  = 0
+    C_SET_SPEED       = 1
     C_REWIND_TO_STATE = 2
     C_SET_INPUT_STATE = 3
-    C_SHUTDOWN = 4
-    C_SET_TRACK = 5
+    C_SHUTDOWN        = 4
+    C_SET_TRACK       = 5
 
 
 class ObservationType(IntEnum):
@@ -61,7 +61,7 @@ class TMNF(gym.Env):
 
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        signal.signal(signal.SIGINT, self.signal_handler)
+        # signal.signal(signal.SIGINT, self.signal_handler)
 
         self.first_state = None
         self.state = None # type: ignore
@@ -87,11 +87,11 @@ class TMNF(gym.Env):
 
     def send_data(self, fmt: str | bytes, /, *v):
         """Send data with type"""
-        self.sendall(struct.pack(fmt, v))
+        self.sendall(struct.pack(fmt, v[0]))
     
     def send_signal(self, signal: int):
         """Send signal"""
-        self.send_data("i", signal)
+        self.send_data('i', int(signal))
 
     def signal_handler(self, sig, frame):
         """Send shutdown signal"""

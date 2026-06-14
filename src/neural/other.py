@@ -1,3 +1,6 @@
+import sys
+if sys.platform != "darwin":
+    raise ImportError("This file is only for macOS (darwin) platform.")
 import mlx.core as mx
 from collections.abc import Callable
 

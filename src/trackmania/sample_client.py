@@ -34,8 +34,8 @@ def set_input_state(sock, up=-1, down=-1, steer=0x7FFFFFFF):
     sock.sendall(struct.pack('b', down))
     sock.sendall(struct.pack('i', steer))
 
-def respond(sock, type):
-    sock.sendall(struct.pack('i', type))
+def respond(sock, typ):
+    sock.sendall(struct.pack('i', typ))
 
 def main():
     global sock

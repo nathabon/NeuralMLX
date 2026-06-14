@@ -1,6 +1,6 @@
 import argparse
 from sample_gymnasium import GymnasiumTraining
-from neural.neuralNetwork2 import *
+from neural import neuralNetwork2 as nn
 
 
 BATCH_SIZE = 64
@@ -8,16 +8,16 @@ LR = 0.00025
 GAMMA = 0.99
 EPS_START = 1.0
 EPS_DECAY = 0.995
-MIN_REPLAY = 10_000
+MIN_REPLAY = 1_000
 SYNC_RATE = 5_000
-SAVE_EVERY = 1000
+SAVE_EVERY = 10_000
 
 
 def get_network(n):
-    return NeuralNetwork([
-        Layer.Linear(4, 64, ReLU),
-        Layer.Linear(64, 64, ReLU),
-        Layer.Linear(64, n, fx)
+    return nn.NeuralNetwork([
+        nn.Layer.Linear(4, 64, nn.ReLU),
+        nn.Layer.Linear(64, 64, nn.ReLU),
+        nn.Layer.Linear(64, n, nn.sigmoid)
     ])
 
 
@@ -30,8 +30,8 @@ def train(resume_path: str | None = None):
     trainer.train(
         get_network=get_network,
         resume_path=resume_path,
-        save_path="saves/cartpole/cartpole",
-        nb_episodes=5_000,
+        save_path="saves/cartpole/cartpole2",
+        nb_episodes=50_000,
         learn_every=1,
         save_every=SAVE_EVERY,
         learning_rate=LR,
@@ -69,5 +69,5 @@ if __name__ == "__main__":
     elif args.cmd == "eval":
         evaluate(args.model, n_episodes=args.episodes, render=not args.no_render)
     else:
-        # train(None)
-        evaluate("saves/cartpole/cartpole_ep04000.h5")
+        train(None)
+        # evaluate("saves/cartpole/cartpole_ep04000.h5")

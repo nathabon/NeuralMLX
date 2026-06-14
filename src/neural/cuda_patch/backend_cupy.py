@@ -1,20 +1,3 @@
-"""
-backend_cupy.py — Shim CuPy remplaçant MLX.
-
-Usage : dans tous tes fichiers, remplacer
-    import mlx.core as mx
-par
-    import backend_cupy as mx
-
-Toutes les fonctions/constantes MLX utilisées dans le projet
-sont remappées vers CuPy. mx.eval() devient un no-op car CuPy
-est eager (exécution immédiate comme NumPy).
-
-Dépendances :
-    pip install cupy-cuda12x   # pour CUDA 12.x (RTX 3060)
-    # ou cupy-cuda11x si tu as CUDA 11
-"""
-
 import cupy as cp
 import numpy as np
 from typing import Any
@@ -25,6 +8,7 @@ float32 = cp.float32
 float16 = cp.float16
 int32   = cp.int32
 bool_   = cp.bool_
+uint8   = cp.uint8
 
 # ─── Constructeurs ────────────────────────────────────────────────────────────
 

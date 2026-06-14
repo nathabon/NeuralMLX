@@ -1,8 +1,19 @@
 from neural import mx
+from neural.other import *
 import numpy as np
 from collections.abc import Callable
-from neural.other import *
 import h5py
+
+def _to_numpy(x):
+    """Convertit un array (CuPy, MLX, NumPy) vers np.ndarray CPU."""
+    if hasattr(x, 'get'):           # CuPy ndarray
+        return x.get()
+    if hasattr(x, 'tolist'):        # MLX array — pas de .get(), passe par list
+        try:
+            return np.array(x.tolist())
+        except Exception:
+            pass
+    return np.asarray(x)            # NumPy ou scalaire
 
 def no_grad(func):
     def wrapper(*args, **kwargs):
@@ -246,8 +257,8 @@ class NeuralLayer(Layer):
         grp = file.create_group(group_name)
         grp.attrs["type"] = "NeuralLayer"
         grp.attrs["func"] = self.func.__name__
-        grp.create_dataset("weights", data=np.array(self.weights))
-        grp.create_dataset("biais",   data=np.array(self.biais))
+        grp.create_dataset("weights", data=_to_numpy(self.weights))
+        grp.create_dataset("biais",   data=_to_numpy(self.biais))
 
         return grp
 
@@ -380,7 +391,7 @@ class ConvolutionalLayer(Layer):
         grp.attrs["type"] = "ConvolutionalLayer"
         grp.attrs["func"] = self.func.__name__
         grp.attrs["stride"] = self.stride
-        grp.create_dataset("kernel", data=np.array(self.kernel))
+        grp.create_dataset("kernel", data=_to_numpy(self.kernel))
 
         return grp
     
@@ -414,7 +425,7 @@ class PoolingLayer(Layer):
     def max2d(self, X: mx.array):
         n, m = X.shape
         nn, nm = n // self.shape[0], m // self.shape[1]
-        X_np = np.array(X.tolist()) 
+        X_np = _to_numpy(X)         
         r = np.zeros((nn, nm))
         grad = np.zeros((n, m))
         

@@ -22,12 +22,12 @@ while True:
             first_state = state
             game.set_input_state(up=True)
 
-        if race_time == 3000:
-            game.set_input_state(steer=-65536)
+        # if race_time == 3000:
+        #     game.set_input_state(steer=-65536)
 
-        if race_time > 0 and race_time % 5000 == 0 and first_state:
-            game.rewind_to_state(first_state)
-            game.set_input_state(up=True, steer=65536)
+        # if race_time > 0 and race_time % 5000 == 0 and first_state:
+        #     game.rewind_to_state(first_state)
+        #     game.set_input_state(up=True, steer=65536)
 
         game.send_signal(SocketMessageType.SC_RUN_STEP_SYNC)
 
