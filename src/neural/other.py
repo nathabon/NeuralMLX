@@ -3,6 +3,7 @@ if sys.platform != "darwin":
     raise ImportError("This file is only for macOS (darwin) platform.")
 import mlx.core as mx
 from collections.abc import Callable
+import numpy as np
 
 def fx(X) -> mx.array:
     return X
@@ -23,13 +24,14 @@ def ReLU(x):
 def ReLUPrime(x):
     return (x > 0).astype(mx.float32)
 
-def normalize(x: mx.array):
-    s = x.sum(axis=-1, keepdims=True)
-    return x / s
+def GeLU(x):
+    return x * 0.5 * (1 + np.tanh(np.sqrt(2/np.pi) * (x + 0.044715 * x ** 3)))
 
-def normalizePrime(x: mx.array):
-    s = x.sum(axis=-1, keepdims=True)
-    return (s - x) / (s ** 2)
+def GeLUPrime(x):
+    t = np.tanh(np.sqrt(2/np.pi) * (x + 0.044715 * x ** 3))
+    gp = np.sqrt(2/np.pi) * (1 + 0.134145 * x ** 2)
+    return 0.5 * (t + x * gp * (1 - t ** 2))
+
 
 def softmax(x):
     x = x - mx.max(x, axis=1, keepdims=True)
@@ -46,7 +48,7 @@ ACTIVATIONS: dict[str, Callable] = {
     "fx": fx,
     "sigmoid": sigmoid,
     "relu": ReLU,
-    "normalize": normalize,
+    "gelu": GeLU,
     "softmax": softmax
 }
 
@@ -57,6 +59,8 @@ def prime(func: Callable) -> Callable: # type: ignore
         return sigmoidPrime
     elif func == ReLU:
         return ReLUPrime
+    elif func == GeLU:
+        return GeLUPrime
     elif func == softmax:
         return softmaxPrime
     

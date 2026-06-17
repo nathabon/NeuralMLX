@@ -6,7 +6,9 @@ enum MessageType {
     CSetSpeed,
     CRewindToState,
     CSetInputState,
-    CShutdown
+    CShutdown,
+    CSetTrack,
+    CSetDrawGame,
 }
 
 const string HOST = "127.0.0.1";
@@ -63,7 +65,6 @@ int HandleMessage() {
             break;            
         }
 
-
         case MessageType::CSetInputState: {
             int8 up   = clientSock.ReadInt8();
             int8 down = clientSock.ReadInt8();
@@ -80,6 +81,23 @@ int HandleMessage() {
             }
 
             break;
+        }
+
+        case MessageType::CSetTrack {
+            auto len  = clientSock.ReadInt32();
+            auto data = clientSock.ReadBytes(len);
+            
+            auto@ simManager = GetSimulationManager();
+            if (!simManager.InRace) {
+                log("Set track");
+                string track_name(data);
+                ExecuteCommand("map " + )
+            }
+        }
+
+        case MessageType::CSetDrawGame {
+            auto enable = clientSock.ReadInt8();
+            ExecuteCommand("draw_game " + enable == 0);
         }
 
         case MessageType::CShutdown: {

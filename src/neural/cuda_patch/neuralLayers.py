@@ -4,6 +4,8 @@ from collections.abc import Callable
 from .other import *
 import h5py
 
+raise ImportError("Ce fichier ne doit pas etre utlisé. Utilisez celui de neural")
+
 def to_numpy(x) -> np.ndarray:
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()

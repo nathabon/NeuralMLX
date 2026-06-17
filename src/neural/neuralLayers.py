@@ -1,8 +1,14 @@
+from ast import Call
+
+from cv2 import mean
+
 from neural import mx
 from neural.other import *
 import numpy as np
 from collections.abc import Callable
+from abc import ABC, abstractmethod
 import h5py
+import sys
 
 def _to_numpy(x):
     """Convertit un array (CuPy, MLX, NumPy) vers np.ndarray CPU."""
@@ -36,46 +42,101 @@ def train(func):
     return wrapper
 
 #MARK: Layer
-class Layer:
+class Layer(ABC):
     weights: mx.array
     grad: mx.array
     training: bool
     last_X: mx.array
     last_Z: mx.array
 
-    def __init__(self, *args, **kwargs):
+    registry = {}
+    _h5_ignore = {
+        "grad",
+        "last_X",
+        "last_Z",
+        "training"
+    }
+
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        Layer.registry[cls.__name__] = cls
+
+    def _init_layer_state(self):
         self.training = True
         self.grad = None # type: ignore
         self.last_X = None # type: ignore
         self.last_Z = None # type: ignore
-        self.weights = None # type: ignore
-        self.__dict__.update(kwargs)
-        
-    
+
+    def __init__(self) -> None:
+        self._init_layer_state()
+
+
+    def toH5File(self, file: h5py.File, group_name: str) -> h5py.Group:
+        grp = file.create_group(group_name)
+        self.toH5(grp)
+
+        return grp
+
+    def toH5(self, grp: h5py.Group):
+        grp.attrs["type"] = type(self).__name__
+
+        for key, value in self.__dict__.items():
+            if key in self._h5_ignore:
+                continue
+
+            if isinstance(value, list) and value and isinstance(value[0], Layer):
+                subgrp = grp.create_group(key)
+                for i, layer in enumerate(value):
+                    layer.toH5(subgrp.create_group(str(i)))
+                continue
+
+            if isinstance(value, mx.array):
+                grp.create_dataset(key, data=np.array(value))
+            elif isinstance(value, (int, float, str, bool)):
+                grp.attrs[key] = value
+
     @classmethod
-    def fromH5(cls, grp: h5py.Group) -> "Layer":
+    def fromH5(cls, grp) -> "Layer":
         typ = grp.attrs["type"]
-        match typ:
-            case "NeuralLayer":
-                return NeuralLayer.fromH5(grp)
-            
-            case "ConvolutionalLayer":
-                return ConvolutionalLayer.fromH5(grp)
-            
-            case "PoolingLayer":
-                return PoolingLayer.fromH5(grp)
-            
-            case "FlattenLayer":
-                return FlattenLayer.fromH5(grp)
-            
-            case _:
-                raise NotImplementedError(f"fromH5 n'est pas implémenté pour le type {typ}")
+        cls = Layer.registry[typ]
+
+        obj = cls.__new__(cls)
+        obj._init_layer_state()
+
+        # attrs simples
+        for key, value in grp.attrs.items():
+            if key != "type":
+                setattr(obj, key, value)
+
+        # datasets + groupes
+        for key in grp.keys():
+            item = grp[key]
+
+            if isinstance(item, h5py.Group):
+                value = [
+                    Layer.fromH5(item[k])
+                    for k in sorted(item.keys(), key=int)
+                ]
+            else:
+                value = mx.array(item[()])
+
+            setattr(obj, key, value)
+
+        return obj
+        
     
     def copy(self) -> 'Layer':
         raise NotImplementedError(f"{type(self).__name__} doit implémenter copy")
     
     def copy_from(self, other: 'Layer'):
-        raise NotImplementedError(f"{type(self).__name__} doit implémenter copy_from")
+        if type(self) != type(other):
+            raise ValueError("Il n'est pas possible de copier depuis une classe différente")
+        for key, value in other.__dict__.items():
+            if key in self._h5_ignore:
+                continue
+
+            setattr(self, key, value)
+
 
     def __str__(self) -> str:
         return f"{type(self).__name__}<{self.__dict__}>"
@@ -84,31 +145,91 @@ class Layer:
         return str(self)
 
     def __call__(self, X: mx.array) -> mx.array:
-        raise NotImplementedError(f"{type(self).__name__} doit implémenter __call__")
+        return self.forward(X)
+    
+    @abstractmethod
+    def forward(self, X: mx.array) -> mx.array:
+        raise NotImplementedError(f"{type(self).__name__} doit implémenter forward")
 
+    @abstractmethod
     def backward(self, delta: mx.array) -> mx.array:
         raise NotImplementedError(f"{type(self).__name__} doit implémenter backward")
+
+
+    def modules(self):
+        for value in self.__dict__.values():
+            if isinstance(value, Layer):
+                yield value
+                yield from value.modules()
+            elif isinstance(value, list):
+                for x in value:
+                    if isinstance(x, Layer):
+                        yield x
+                        yield from x.modules()
+
+    def train(self):
+        self.training = True
+        for m in self.modules():
+            m.training = True
+
+    def eval(self):
+        self.training = False
+        for m in self.modules():
+            m.training = False
 
     def update(self, learningRate: float, optimizer: str = "sgd"):
         if self.weights is not None and self.grad is not None:
             self.weights = self.weights - learningRate * self.grad
 
     def getOutputShape(self, inputShape):
-        raise NotImplementedError(f"{type(self).__name__} doit implémenter getOutputShape")
+        return self(mx.zeros(inputShape)).shape
     
     def getNbParameters(self) -> int:
-        raise NotImplementedError(f"{type(self).__name__} doit implémenter getNbParameters")
+        return 0
     
-    def toH5(self, file: h5py.File, group_name: str) -> h5py.Group:
-        raise NotImplementedError(f"{type(self).__name__} doit implémenter toH5")
+    @classmethod
+    def Sequential(cls, layers: list[Layer]):
+        return SequentialLayer(layers)
 
     @classmethod
-    def Linear(cls, inputDim: int, outputDim: int, activationFunction: Callable = lambda e: e):
-        return NeuralLayer.Linear(inputDim, outputDim, activationFunction)
+    def Linear(cls, inputDim: int, outputDim: int, activationFunction: Callable = lambda e: e, useBiais: bool = True):
+        return NeuralLayer.Linear(inputDim, outputDim, activationFunction, useBiais)
+    
+    @classmethod
+    def ReLU(cls):
+        return FuncLayer(ReLU)
+    
+    @classmethod
+    def Softmax(cls):
+        return FuncLayer(softmax)
+    
+    @classmethod
+    def Sigmoid(cls):
+        return FuncLayer(sigmoid)
+    
+    @classmethod
+    def GeLU(cls):
+        return FuncLayer(GeLU)
+    
+    @classmethod
+    def Embedding(cls, vocab_size: int, output_dim: int):
+        return EmbeddingLayer.Embedding(vocab_size, output_dim)
+    
+    @classmethod
+    def Dropout(cls, p: float = 0.5):
+        return DropoutLayer(p)
+    
+    @classmethod
+    def Nomalization(cls):
+        return NormalizationLayer()
+    
+    @classmethod
+    def Residual(cls, layer: Layer):
+        return ResidualLayer(layer)
 
     @classmethod
     def Conv2d(cls, C_in: int, C_out: int, kH: int, kW: int, activationFunction: Callable = lambda e: e, stride = 1):
-        return ConvolutionalLayer.random(C_in, C_out, kH, kW, activationFunction, stride)
+        return ConvolutionalLayer.Conv(C_in, C_out, kH, kW, activationFunction, stride)
 
     @classmethod 
     def MaxPooling(cls, shape: tuple):
@@ -118,22 +239,63 @@ class Layer:
     def Flatten(cls):
         return FlattenLayer()
 
+
+# MARK: SequentialLayer
+class SequentialLayer(Layer):
+    layers: list[Layer]
+
+    def __init__(self, layers: list[Layer]):
+        super().__init__()
+        self.layers = layers
+    
+    def forward(self, X: mx.array) -> mx.array:
+        for layer in self.layers:
+            X = layer(X)
+        
+        return X
+    
+    def backward(self, delta: mx.array) -> mx.array:
+        for layer in reversed(self.layers):
+            delta = layer.backward(delta)
+        
+        return delta
+    
+    def update(self, learningRate: float, optimizer: str = "adam"):
+        for layer in self.layers:
+            layer.update(learningRate, optimizer)
+
+
+
 # MARK: NeuralLayer
 class NeuralLayer(Layer):
     weights: mx.array
-    grad_weights: mx.array
-    grad_biais: mx.array
     biais: mx.array
+    _weightsT: mx.array
+    _biaisT: mx.array
+
     func: Callable
     funcPrime: Callable
+    funcName: str
     optimizer: str
+
+    grad_weights: mx.array
+    grad_biais: mx.array
     
-    def __init__(self, weights_: mx.array, biais_: mx.array, activationFunction: Callable, optimizer: str = "adam") -> None:
+
+    _h5_ignore = Layer._h5_ignore | {"weightsT", "biaisT", "_weigthsT", "_biaisT", "optimizer", "grad_weights", "grad_biais", "_t", "_m_w", "_v_w", "_m_b", "_v_v"}
+    
+    def __init__(self, weights_: mx.array, biais_: mx.array, activationFunction: Callable, useBiais: bool = True, optimizer: str = "adam") -> None:
         super().__init__()
-        self.func = activationFunction
-        self.funcPrime = prime(self.func)
         self.weights = weights_
         self.biais = biais_
+        self._weightsT = mx.transpose(weights_)
+        self._biaisT = mx.transpose(biais_)
+
+        self.func = activationFunction
+        self.funcPrime = prime(self.func)
+        self.funcName = self.func.__name__
+        
+        self.useBiais = useBiais
         self.optimizer = optimizer.lower()
 
         if self.optimizer == "adam":
@@ -142,9 +304,25 @@ class NeuralLayer(Layer):
             self._v_w      = None   # 2ème moment weights
             self._m_b      = None
             self._v_b      = None
+
+    @property
+    def weightsT(self):
+        if self._weightsT is not None:
+            return self._weightsT
+        self._weightsT = mx.transpose(self.weights)
+
+        return self._weightsT
+    
+    @property
+    def biaisT(self):
+        if self._biaisT is not None:
+            return self._biaisT
+        self._biaisT = mx.transpose(self.biais)
+
+        return self._biaisT
     
     @classmethod
-    def Linear(cls, inputDim: int, outputDim: int, activationFunction: Callable | str = lambda e: e):
+    def Linear(cls, inputDim: int, outputDim: int, activationFunction: Callable | str = lambda e: e, useBiais: bool = True):
         if isinstance(activationFunction, str):
             activationFunction = ACTIVATIONS[activationFunction.lower()]
 
@@ -153,29 +331,19 @@ class NeuralLayer(Layer):
         return cls(
             mx.random.uniform(-limit, limit, (outputDim, inputDim)),
             mx.zeros((outputDim, 1)),
-            activationFunction
+            activationFunction,
+            useBiais
         )
-    
-    @classmethod
-    def fromH5(cls, grp: h5py.Group) -> "NeuralLayer":
-        w = mx.array(grp["weights"][:]) # type: ignore
-        b = mx.array(grp["biais"][:]) # type: ignore
-        f: str = grp.attrs["func"] # type: ignore
 
-        return cls(w, b, ACTIVATIONS[f.lower()])
     
     def copy(self):
         return NeuralLayer(mx.array(self.weights), mx.array(self.biais), self.func)
-    
-    def copy_from(self, other: 'NeuralLayer'): # type: ignore
-        self.weights = mx.array(other.weights)
-        self.biais   = mx.array(other.biais)
 
     def __str__(self) -> str:
-        return f"NeuralLayer<{self.dim} -- {self.weights.shape} --- {self.biais.shape} -- {self.func}>"
+        return f"NeuralLayer<{self.dim} -- {self.biais.shape} -- {self.func}>"
 
-    def __call__(self, X: mx.array) -> mx.array:
-        Z = X @ mx.transpose(self.weights) + mx.transpose(self.biais)
+    def forward(self, X: mx.array) -> mx.array:
+        Z = X @ self.weightsT + self.biaisT
         A = self.func(Z)
         if self.training:
             self.last_X = X
@@ -192,7 +360,10 @@ class NeuralLayer(Layer):
         N = self.last_X.shape[0]
 
         self.grad_weights = mx.transpose(delta_z) @ self.last_X / N
-        self.grad_biais = mx.mean(delta_z, axis=0, keepdims=True).T
+        if self.useBiais:
+            self.grad_biais = mx.mean(delta_z, axis=0, keepdims=True).T
+        else:
+            self.grad_biais = mx.zeros_like(self.biais)
 
         return delta_z @ self.weights
     
@@ -228,6 +399,8 @@ class NeuralLayer(Layer):
         else:
             self.weights = self.weights - learningRate * self.grad_weights
             self.biais = self.biais - learningRate * self.grad_biais
+        self._weightsT = mx.transpose(self.weights)
+        self._biaisT = mx.transpose(self.biais)
         
     
     @property
@@ -253,14 +426,195 @@ class NeuralLayer(Layer):
     def getNbParameters(self) -> int:
         return self.weights.shape[0] * self.weights.shape[1] + self.biais.shape[0]
     
-    def toH5(self, file: h5py.File, group_name: str) -> h5py.Group:
-        grp = file.create_group(group_name)
-        grp.attrs["type"] = "NeuralLayer"
-        grp.attrs["func"] = self.func.__name__
-        grp.create_dataset("weights", data=_to_numpy(self.weights))
-        grp.create_dataset("biais",   data=_to_numpy(self.biais))
 
-        return grp
+# MARK: FuncLayer
+class FuncLayer(Layer):
+    func: Callable
+    funcPrime: Callable
+    funcName: str
+
+    def __init__(self, func: Callable):
+        super().__init__()
+        self.func = func
+        self.funcPrime = prime(func)
+        self.funcName = func.__name__
+
+    def forward(self, X: mx.array):
+        Z = self.func(X)
+        if self.training:
+            self.last_X = X
+            self.last_Z = Z
+        return Z
+    
+    def backward(self, delta: mx.array):
+        return self.funcPrime(self.last_Z) * delta
+    
+    def copy(self):
+        return FuncLayer(self.func)
+
+    def __str__(self) -> str:
+        return f"FuncLayer<{self.func}>"
+    
+# MARK: EmbeddingLayer
+class EmbeddingLayer(Layer):
+    weights: mx.array
+    grad: mx.array
+
+    def __init__(self, weights: mx.array):
+        if sys.platform != "darwin":
+            raise NotImplementedError("Cette classe n'est actuellement implémentée que pour foncitonner sur Apple Silicon avec MLX")
+        super().__init__()
+        self.weights = weights
+
+    @classmethod
+    def Embedding(cls, vocab_size: int, output_dim: int):
+        limit = (6 / (vocab_size + output_dim)) ** 0.5
+        return cls(mx.random.uniform(-limit, limit, (vocab_size, output_dim)))
+    
+    
+    def copy(self):
+        return EmbeddingLayer(mx.array(self.weights))
+
+    def forward(self, X: mx.array) -> mx.array:
+        Z = self.weights[X]
+        if self.training:
+            self.last_X = X
+            self.last_Z = Z
+        return Z
+    
+    def backward(self, delta: mx.array) -> mx.array:
+        dW = mx.zeros(self.weights.shape)
+        grad = dW.at[self.last_X].add(delta)
+        self.grad = grad
+
+        return mx.zeros_like(delta)
+        
+    
+    @property
+    def dim(self):
+        return self.weights.shape
+    
+    def getOutputShape(self, inputShape):
+        B = 1
+        c = 0
+        if len(inputShape) == 1:
+            c = inputShape[0]
+        elif len(inputShape) == 2:
+            B, c = inputShape
+        else:
+            raise ValueError("L'input d'un Embedding Layer doit être flatten")
+        
+        if c != self.dim[1]:
+            raise ValueError(f"Ce réseau ne prend que des entrées de dimensions {self.dim[1]}, pas {c}")
+        
+        return (B, self.dim[0])
+
+
+    def getNbParameters(self) -> int:
+        return self.weights.shape[0] * self.weights.shape[1]
+    
+
+
+# MARK: DropoutLayer
+class DropoutLayer(Layer):
+    p: float
+    last_mask: mx.array
+    q: float
+
+    _h5_ignore = Layer._h5_ignore | {"last_mask"}
+
+    def __init__(self, probability: float = 0.5):
+        super().__init__()
+        self.p = probability
+        self.last_mask = None # type: ignore
+        self.q = 1 / (1. - self.p)
+    
+    def copy(self):
+        return DropoutLayer(self.p)
+    
+
+    def forward(self, X: mx.array) -> mx.array:
+        mask = (mx.random.uniform(shape=X.shape) > self.p).astype(X.dtype) * self.q
+        Z = mask * X
+        if self.training:
+            self.last_X = X
+            self.last_Z = Z
+            self.last_mask = mask
+        return Z
+    
+    def backward(self, delta: mx.array) -> mx.array:
+        return self.last_mask * delta
+    
+    
+    def getOutputShape(self, inputShape):
+        return inputShape
+
+
+# MARK: NormalizationLayer
+class NormalizationLayer(Layer):
+    EPS = 1e-8
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, X: mx.array):
+        mean = X.mean(axis=-1, keepdims=True)
+        var = X.var(axis=-1, keepdims=True)
+        std = mx.sqrt(var + self.EPS)
+        Z = (X - mean) / std
+
+        if self.training:
+            self.last_X = X
+            self.last_Z = Z
+            self.last_std = std
+        
+        return Z
+    
+    def backward(self, delta: mx.array):
+        mean = self.last_X.mean(axis=-1, keepdims=True)
+
+        y = (self.last_X - mean) / self.last_std
+
+        mean_delta = delta.mean(axis=-1, keepdims=True)
+        mean_delta_y = (delta * y).mean(axis=-1, keepdims=True)
+
+        dx = (delta - mean_delta - y * mean_delta_y) / self.last_std
+        return dx
+
+
+# MARK: ResidualLayer
+class ResidualLayer(Layer):
+    def __init__(self, layer: Layer):
+        super().__init__()
+        self.layer = layer
+
+    def forward(self, X: mx.array) -> mx.array:
+        Y = self.layer(X)
+
+        if Y.shape != X.shape:
+            raise ValueError(
+                f"Residual: shape mismatch {Y.shape} != {X.shape}"
+            )
+
+        return Y + X
+
+    def backward(self, delta: mx.array) -> mx.array:
+        # dL/dX = dL/dY * (f'(X) + I)
+        return self.layer.backward(delta) + delta
+
+    def update(self, learningRate: float, optimizer: str = "adam"):
+        self.layer.update(learningRate, optimizer)
+
+    def getNbParameters(self) -> int:
+        return self.layer.getNbParameters()
+
+    def getOutputShape(self, inputShape):
+        out = self.layer.getOutputShape(inputShape)
+        if out != inputShape:
+            raise ValueError(
+                "Residual connection requires identical shapes"
+            )
+        return out
 
 # MARK: ConvolutionalLayer
 class ConvolutionalLayer(Layer):
@@ -269,6 +623,8 @@ class ConvolutionalLayer(Layer):
     prime: Callable
     stride: int
     optimizer: str
+
+    _h5_ignore = Layer._h5_ignore | {"kernel"}
 
     def __init__(self, kernel_: mx.array, func_: Callable = lambda e: e, stride = 1, optimizer: str = "adam"):
         super().__init__()
@@ -284,32 +640,20 @@ class ConvolutionalLayer(Layer):
             self._v      = None
         
     @classmethod
-    def random(cls, C_in: int, C_out: int, kH: int, kW: int, activationFunction: Callable = lambda e: e, stride: int = 1):
+    def Conv(cls, C_in: int, C_out: int, kH: int, kW: int, activationFunction: Callable = lambda e: e, stride: int = 1):
         scale = (2 / (kH * kW * C_in)) ** 0.5
         return cls(
             mx.random.normal((C_out, kH, kW, C_in)) * scale,
             activationFunction, stride
         )
-    
-    @classmethod
-    def fromH5(cls, grp: h5py.Group) -> "ConvolutionalLayer":
-        k = mx.array(grp["kernel"][:]) # type: ignore
-        f: str = grp.attrs["func"] # type: ignore
-        stride: int = grp.attrs["stride"] # type: ignore
 
-        return cls(k, ACTIVATIONS[f.lower()], stride)
-    
     def copy(self):
         return ConvolutionalLayer(mx.array(self.kernel), self.func, self.stride)
-
-    def copy_from(self, other: 'ConvolutionalLayer'): # type: ignore
-        self.kernel = mx.array(other.kernel)
 
     def __str__(self) -> str:
         return f"ConvolutionalLater <{self.kernel.shape}>"
 
-
-    def __call__(self, X: mx.array) -> mx.array:
+    def forward(self, X: mx.array) -> mx.array:
         if len(X.shape) == 3:
             X = mx.array([X])
         Z = mx.conv2d(X, self.kernel, stride=self.stride)
@@ -386,14 +730,6 @@ class ConvolutionalLayer(Layer):
         a, b, c, d = self.kernel.shape
         return a * b * c * d
     
-    def toH5(self, file: h5py.File, group_name: str) -> h5py.Group:
-        grp = file.create_group(group_name)
-        grp.attrs["type"] = "ConvolutionalLayer"
-        grp.attrs["func"] = self.func.__name__
-        grp.attrs["stride"] = self.stride
-        grp.create_dataset("kernel", data=_to_numpy(self.kernel))
-
-        return grp
     
 
 # MARK: PoolingLayer
@@ -406,18 +742,10 @@ class PoolingLayer(Layer):
         self.shape = shape_
         self.typ = typ_
     
-    @classmethod
-    def fromH5(cls, grp: h5py.Group) -> "PoolingLayer":
-        typ = grp.attrs["typ"] # type: ignore
-        shape = grp.attrs["shape"] # type: ignore
-
-        return cls(shape, typ) # type: ignore
     
     def copy(self):
         return PoolingLayer(self.shape, self.typ)
     
-    def copy_from(self, other):
-        pass  # pas de poids à copier
 
     def __str__(self) -> str:
         return f"PoolingLayer <{self.typ} -- {self.shape}>"
@@ -470,7 +798,7 @@ class PoolingLayer(Layer):
 
         return out
 
-    def __call__(self, X: mx.array) -> mx.array:
+    def forward(self, X: mx.array) -> mx.array:
         if self.typ == "max":
             return self.max(X)
         raise ValueError(f"Type de pooling inconnu : {self.typ}")
@@ -509,36 +837,25 @@ class PoolingLayer(Layer):
 
     def getNbParameters(self) -> int:
         return 0
-    
-    def toH5(self, file: h5py.File, group_name: str) -> h5py.Group:
-        grp = file.create_group(group_name)
-        grp.attrs["type"] = "PoolingLayer"
-        grp.attrs["typ"] = self.typ
-        grp.attrs["shape"] = self.shape
 
-        return grp
     
 # MARK: FLattenLayer
 class FlattenLayer(Layer):
     last_dim: tuple
     
+    _h5_ignore = Layer._h5_ignore | {"last_dim"}
+
     def __init__(self):
         super().__init__()
     
-    @classmethod
-    def fromH5(cls, grp: h5py.Group) -> "FlattenLayer":
-        return cls()
     
     def copy(self):
         return FlattenLayer()
-    
-    def copy_from(self, other):
-        pass  # pas de poids à copier
 
     def __str__(self) -> str:
         return "FlattenLayer<>"
 
-    def __call__(self, X: mx.array):
+    def forward(self, X: mx.array):
         Z = X.reshape(X.shape[0], -1)
 
         if self.training:
@@ -554,11 +871,3 @@ class FlattenLayer(Layer):
         
         return (B, h*w*c_in)
     
-    def getNbParameters(self) -> int:
-        return 0
-    
-    def toH5(self, file: h5py.File, group_name: str) -> h5py.Group:
-        grp = file.create_group(group_name)
-        grp.attrs["type"] = "FlattenLayer"
-
-        return grp

@@ -13,7 +13,7 @@ SYNC_RATE = 5_000
 SAVE_EVERY = 10_000
 
 
-def get_network(n):
+def get_network(shape, n):
     return nn.NeuralNetwork([
         nn.Layer.Linear(4, 64, nn.ReLU),
         nn.Layer.Linear(64, 64, nn.ReLU),

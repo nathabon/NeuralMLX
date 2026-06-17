@@ -55,7 +55,7 @@ class GymnasiumTraining:
         return self.env.action_space.shape
 
     #MARK: train
-    def train(self, get_network: Callable[[int], NeuralNetwork] | None = None, resume_path: str | None = None, save_path: str | None = None, 
+    def train(self, get_network: Callable[[tuple | None, int], NeuralNetwork] | None = None, resume_path: str | None = None, save_path: str | None = None, 
               nb_episodes: int = 5_000, learn_every: int = 4, save_every: int = 1_000,
               learning_rate: float = 0.001, gamma: float = 0.99, epsilon: float = 1.0, epsilon_decay: float = 0.99,
               sync_network_rate: int = 10_000, batch_size: int = 64, min_replay_size: int = 5_000):
@@ -64,7 +64,7 @@ class GymnasiumTraining:
             print(f"Reprise depuis : {resume_path}")
             network = NeuralNetwork.fromFileH5(resume_path)
         elif get_network is not None:
-            network = get_network(self.n_actions)
+            network = get_network(self.env.observation_space.shape, self.n_actions)
         else:
             raise ValueError("Il faut donner un moyen de créer un réseau de neurone")
         

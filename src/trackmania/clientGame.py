@@ -1,4 +1,5 @@
 import socket
+import stat
 import struct
 import time
 import signal
@@ -17,6 +18,7 @@ class SocketMessageType(IntEnum):
     C_SET_INPUT_STATE = 3
     C_SHUTDOWN        = 4
     C_SET_TRACK       = 5
+    C_SET_DRAW_GAME      = 6
 
 
 class ObservationType(IntEnum):
@@ -26,9 +28,10 @@ class ObservationType(IntEnum):
     INPUTS                      = 3
 
     DISTANCE_TO_CENTERLINE      = 4
-    PROGRESS_ON_TRACK           = 5
-    DIRECTION_VERSUS_CENTERINE  = 6
-    DISTANCE_TO_NEXT_CHECKPOINT = 7
+    DIR_TO_CENTERLINE           = 5
+    DIR_FROM_CENTERLINE         = 6
+    PROGRESS_ON_TRACK           = 7
+    DISTANCE_TO_NEXT_CHECKPOINT = 8
 
 
 def getObservationTypeBox(obs: ObservationType):
@@ -36,15 +39,41 @@ def getObservationTypeBox(obs: ObservationType):
         ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Position
         ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Display speed
         ([0], [1000]),                                           # Velocity
-        ([0, 0, -65536], [65536, 65536, 65536]),                 # Inputs
-        ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Distance to centerline
+        ([0, 0, -65536], [1, 1, 65536]),                         # Inputs
+        (0, np.inf),                                             # Distance to centerline
+        ([-np.inf, -np.inf, -np.inf], [np.inf, np.inf, np.inf]), # Direction to centerline
+        ([-1, -1, -1], [1, 1, 1]),                               # Direction from centerline
         ([0], [1]),                                              # Progress on track
-        ([-1, -1, -1], [1, 1, 1]),                               # Direction versus centerline
-        ([0], [np.inf]),                                         # Distance no next chekpoint
+        ([0], [np.inf]),                                         # Distance next chekpoint
     ]
 
     return boxes[obs]
 
+
+def getObservation(state: SimStateData, obs: list[ObservationType], **kwargs):
+    centerline_data = None
+
+    def get_centerline_data():
+        nonlocal centerline_data
+        if centerline_data is None:
+            centerline_data = get_dist_to_centerline(
+                np.array(state.position),
+                kwargs["centerline"]
+            )
+        return centerline_data
+
+    a = [
+        lambda: state.position,                                      # Position
+        lambda: state.display_speed,                                 # Display speed
+        lambda: state.velocity,                                      # Velocity                       
+        lambda: (int(state.input_accelerate),                        # Inputs
+                 int(state.input_brake),                             # Inputs
+                 state.input_steer),                                 # Inputs
+        lambda: get_centerline_data()[0],                            # Distance to centerline
+        lambda: get_centerline_data()[1] - np.array(state.position), # Direction to centerline
+    ]
+
+    return [a[o]() for o in obs]
 
 
 #MARK: TMNF
@@ -99,9 +128,28 @@ class TMNF(gym.Env):
         self.send_signal(SocketMessageType.C_SHUTDOWN)
         self.sock.close()
 
+    def _recv(self, bufsize: int, flags: int = 0):
+        """Receive the signal sent by the game"""
+        return self.sock.recv(bufsize, flags)
+    
+    def recv(self, bufsize: int):
+        """Receive and unpack the signal sent by the game"""
+        return struct.unpack('i', self._recv(bufsize))
+    
+    def recv_state(self):
+        """Receive the current signal"""
+        state_length = self.recv(4)[0]
+        state = SimStateData(self._recv(state_length))
+        state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length) # type: ignore
+        state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length) # type: ignore
+        self.state = state
+        return state
+
     def set_track(self, track_name: str):
         self.send_signal(SocketMessageType.C_SET_TRACK)
-        self.send_data('s', track_name)
+        self.send_data('i', len(track_name))
+        data = bytes(track_name, encoding="utf-8")
+        self.sendall(data)
 
     def rewind_to_state(self, state):
         """Sent state to rewind"""
@@ -128,22 +176,9 @@ class TMNF(gym.Env):
         self.send_signal(SocketMessageType.C_SET_SPEED)
         self.send_data('f', speed)
 
-    def _recv(self, bufsize: int, flags: int = 0):
-        """Receive the signal sent by the game"""
-        return self.sock.recv(bufsize, flags)
-    
-    def recv(self, bufsize: int):
-        """Receive and unpack the signal sent by the game"""
-        return struct.unpack('i', self._recv(bufsize))
-    
-    def recv_state(self):
-        """Receive the current signal"""
-        state_length = self.recv(4)[0]
-        state = SimStateData(self._recv(state_length))
-        state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length) # type: ignore
-        state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length) # type: ignore
-        self.state = state
-        return state
+    def set_simulation_windows(self, enable: bool = True):
+        self.send_signal(SocketMessageType.C_SET_DRAW_GAME)
+        self.send_data('b', enable)
     
     
     #
@@ -195,14 +230,16 @@ class TMNF(gym.Env):
 
 
     def _get_obs(self, observations: list[ObservationType] = [ObservationType.POSITION]):
-        pass
+        return getObservation(self.state, observations)
 
-    def _get_info(self) -> dict[str, Any]: # type: ignore
-        pass
+    def _get_info(self) -> dict[str, Any]:
+        obs = getObservation(self.state, [obs for obs in ObservationType])
+        return {str(ob.name).lower(): obs[ob] for ob in ObservationType}
 
     def make_env(self, track_name: str, reward: Callable[[SimStateData, np.ndarray], float], steering_values = [0, 1], observations: list[ObservationType] = [ObservationType.POSITION]):
         self.action_space = gym.spaces.Box(low=np.array([0, 0, -65536]), high=np.array([65536, 65536, 65536]), dtype=np.int32)
 
+        self.observations = observations
         low = []
         high = []
         for obs in observations:
@@ -214,11 +251,14 @@ class TMNF(gym.Env):
         self.compute_reward = reward
         self.observations = observations
 
-    def reset_env(self, track_name: str, observations: list[ObservationType] = [ObservationType.POSITION], seed: int | None = None, options: dict[str, Any] | None = None):
-        super().reset(seed=seed)
         self.set_track(track_name)
+        self.first_state = self.get_state()
 
-        obs = self._get_obs(observations)
+    def reset_env(self, seed: int | None = None, options: dict[str, Any] | None = None):
+        super().reset(seed=seed)
+        self.rewind_to_state(self.first_state)
+
+        obs = self._get_obs(self.observations)
         info = self._get_info()
 
         return obs, info
@@ -242,7 +282,13 @@ class TMNF(gym.Env):
         return obs, reward, terminated, truncated, info
 
 
+def get_length_centerline(points: np.ndarray) -> float:
+    A = points[:-1]
+    B = points[1:]
+    AB = B - A
 
+    lengths = np.sqrt(np.einsum('ij,ij->i', AB, AB))
+    return float(np.sum(lengths))
 
 def get_dist_to_centerline(P: np.ndarray, points: np.ndarray) -> tuple[float, np.ndarray]:
     """
