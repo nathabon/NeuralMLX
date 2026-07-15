@@ -1,25 +1,22 @@
-from ast import Call
-
-from cv2 import mean
-
-from neural import mx
-from neural.other import *
+from . import mx
+from .other import *
 import numpy as np
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 import h5py
 import sys
 
+
 def _to_numpy(x):
     """Convertit un array (CuPy, MLX, NumPy) vers np.ndarray CPU."""
-    if hasattr(x, 'get'):           # CuPy ndarray
+    if hasattr(x, 'get'): 
         return x.get()
-    if hasattr(x, 'tolist'):        # MLX array — pas de .get(), passe par list
+    if hasattr(x, 'tolist'):
         try:
             return np.array(x.tolist())
         except Exception:
             pass
-    return np.asarray(x)            # NumPy ou scalaire
+    return np.asarray(x)
 
 def no_grad(func):
     def wrapper(*args, **kwargs):
@@ -132,7 +129,7 @@ class Layer(ABC):
         if type(self) != type(other):
             raise ValueError("Il n'est pas possible de copier depuis une classe différente")
         for key, value in other.__dict__.items():
-            if key in self._h5_ignore:
+            if key in self._h5_ignore or key.startswith("last"):
                 continue
 
             setattr(self, key, value)
@@ -145,19 +142,23 @@ class Layer(ABC):
         return str(self)
 
     def __call__(self, X: mx.array) -> mx.array:
-        return self.forward(X)
-    
+        return self.forward(X)    
+
     @abstractmethod
     def forward(self, X: mx.array) -> mx.array:
         raise NotImplementedError(f"{type(self).__name__} doit implémenter forward")
 
-    @abstractmethod
     def backward(self, delta: mx.array) -> mx.array:
         raise NotImplementedError(f"{type(self).__name__} doit implémenter backward")
 
 
     def modules(self):
-        for value in self.__dict__.values():
+        yield self
+
+        for key, value in self.__dict__.items():
+            if key in self._h5_ignore:
+                continue
+
             if isinstance(value, Layer):
                 yield value
                 yield from value.modules()
@@ -173,6 +174,7 @@ class Layer(ABC):
             m.training = True
 
     def eval(self):
+        mx.grad
         self.training = False
         for m in self.modules():
             m.training = False
@@ -184,11 +186,28 @@ class Layer(ABC):
     def getOutputShape(self, inputShape):
         return self(mx.zeros(inputShape)).shape
     
-    def getNbParameters(self) -> int:
-        return 0
+    def getNbParameters(self):
+        total = 0
+
+        for key, value in self.__dict__.items():
+            if key in self._h5_ignore:
+                continue
+
+            if isinstance(value, mx.array):
+                total += value.size
+
+            elif isinstance(value, Layer):
+                total += value.getNbParameters()
+
+            elif isinstance(value, list):
+                for x in value:
+                    if isinstance(x, Layer):
+                        total += x.getNbParameters()
+
+        return total
     
     @classmethod
-    def Sequential(cls, layers: list[Layer]):
+    def Sequential(cls, layers: list["Layer"]):
         return SequentialLayer(layers)
 
     @classmethod
@@ -220,11 +239,11 @@ class Layer(ABC):
         return DropoutLayer(p)
     
     @classmethod
-    def Nomalization(cls):
+    def Normalization(cls):
         return NormalizationLayer()
     
     @classmethod
-    def Residual(cls, layer: Layer):
+    def Residual(cls, layer: "Layer"):
         return ResidualLayer(layer)
 
     @classmethod
@@ -264,6 +283,8 @@ class SequentialLayer(Layer):
         for layer in self.layers:
             layer.update(learningRate, optimizer)
 
+    def getNbParameters(self) -> int:
+        return sum(layer.getNbParameters() for layer in self.layers)
 
 
 # MARK: NeuralLayer
@@ -424,7 +445,8 @@ class NeuralLayer(Layer):
 
 
     def getNbParameters(self) -> int:
-        return self.weights.shape[0] * self.weights.shape[1] + self.biais.shape[0]
+        b = self.biais.shape[0] if self.useBiais else 0
+        return self.weights.size + b
     
 
 # MARK: FuncLayer
@@ -453,7 +475,10 @@ class FuncLayer(Layer):
         return FuncLayer(self.func)
 
     def __str__(self) -> str:
-        return f"FuncLayer<{self.func}>"
+        return f"FuncLayer{self.func}"
+    
+    def getNbParameters(self) -> int:
+        return 0
     
 # MARK: EmbeddingLayer
 class EmbeddingLayer(Layer):
@@ -511,7 +536,7 @@ class EmbeddingLayer(Layer):
 
 
     def getNbParameters(self) -> int:
-        return self.weights.shape[0] * self.weights.shape[1]
+        return self.weights.size
     
 
 
@@ -534,20 +559,23 @@ class DropoutLayer(Layer):
     
 
     def forward(self, X: mx.array) -> mx.array:
+        if not self.training:
+            return X
+        
         mask = (mx.random.uniform(shape=X.shape) > self.p).astype(X.dtype) * self.q
         Z = mask * X
-        if self.training:
-            self.last_X = X
-            self.last_Z = Z
-            self.last_mask = mask
+        self.last_X = X
+        self.last_Z = Z
+        self.last_mask = mask
         return Z
     
     def backward(self, delta: mx.array) -> mx.array:
         return self.last_mask * delta
     
-    
     def getOutputShape(self, inputShape):
         return inputShape
+    
+
 
 
 # MARK: NormalizationLayer
@@ -557,29 +585,17 @@ class NormalizationLayer(Layer):
     def __init__(self):
         super().__init__()
 
-    def forward(self, X: mx.array):
+    def forward(self, X):
         mean = X.mean(axis=-1, keepdims=True)
         var = X.var(axis=-1, keepdims=True)
-        std = mx.sqrt(var + self.EPS)
-        Z = (X - mean) / std
 
-        if self.training:
-            self.last_X = X
-            self.last_Z = Z
-            self.last_std = std
-        
-        return Z
-    
-    def backward(self, delta: mx.array):
-        mean = self.last_X.mean(axis=-1, keepdims=True)
+        self.mean = mean
+        self.var = var
 
-        y = (self.last_X - mean) / self.last_std
+        return (X - mean) / mx.sqrt(var + self.EPS)
 
-        mean_delta = delta.mean(axis=-1, keepdims=True)
-        mean_delta_y = (delta * y).mean(axis=-1, keepdims=True)
-
-        dx = (delta - mean_delta - y * mean_delta_y) / self.last_std
-        return dx
+    def backward(self, delta):
+        return delta
 
 
 # MARK: ResidualLayer
@@ -588,33 +604,18 @@ class ResidualLayer(Layer):
         super().__init__()
         self.layer = layer
 
-    def forward(self, X: mx.array) -> mx.array:
-        Y = self.layer(X)
+    def forward(self, X):
+        self.X = X
+        return X + self.layer(X)
 
-        if Y.shape != X.shape:
-            raise ValueError(
-                f"Residual: shape mismatch {Y.shape} != {X.shape}"
-            )
-
-        return Y + X
-
-    def backward(self, delta: mx.array) -> mx.array:
-        # dL/dX = dL/dY * (f'(X) + I)
-        return self.layer.backward(delta) + delta
+    def backward(self, delta):
+        return delta + self.layer.backward(delta)
 
     def update(self, learningRate: float, optimizer: str = "adam"):
         self.layer.update(learningRate, optimizer)
 
     def getNbParameters(self) -> int:
         return self.layer.getNbParameters()
-
-    def getOutputShape(self, inputShape):
-        out = self.layer.getOutputShape(inputShape)
-        if out != inputShape:
-            raise ValueError(
-                "Residual connection requires identical shapes"
-            )
-        return out
 
 # MARK: ConvolutionalLayer
 class ConvolutionalLayer(Layer):

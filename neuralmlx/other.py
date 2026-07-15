@@ -63,6 +63,7 @@ def prime(func: Callable) -> Callable: # type: ignore
         return GeLUPrime
     elif func == softmax:
         return softmaxPrime
+    return xPrime
     
 def zeros_hot(size, index, nb=1.):
     data = [0.] * size

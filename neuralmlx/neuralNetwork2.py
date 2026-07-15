@@ -1,9 +1,8 @@
-from neural import mx
-from neural import other
-from neural.other import softmax, sigmoid, ReLU
-from neural import neuralLayers
-from neural.neuralLayers import Layer, NeuralLayer, ConvolutionalLayer, no_grad
-
+from . import mx
+from . import other
+from .other import softmax, sigmoid, ReLU
+from . import neuralLayers
+from .neuralLayers import Layer, NeuralLayer, ConvolutionalLayer, no_grad
 import random
 import time
 import h5py
@@ -15,39 +14,22 @@ def max_indice(iterable: mx.array) -> tuple:
     return ind, float(flat[ind].item())
 
 
-class NeuralNetwork:
+class NeuralNetwork(Layer):
     layers: list[Layer]
     L: int
     cost_function: str
 
     def __init__(self, layers_: list[Layer]) -> None:
+        super().__init__()
         self.layers = layers_
         self.L = int(len(layers_))
 
-    @classmethod
-    def fromFile(cls, file_name, f):
-        layers = []
-        with open(file_name, "r") as file:
-            datas = file.read().split(" ")
-        
-        i = 1
-        while i < len(datas):
-            n = int(datas[i-1][1:datas[i-1].index(",")])
-            nb = int(datas[i-1][datas[i-1].index(",")+1: -1])
-            matrice = []
-            for ind in range(nb):
-                matrice.append([float(e) for e in datas[i + (ind * n):i + ((ind + 1) * n)]])
-            mb = [[float(e)] for e in datas[i + (n * nb):i + nb * n + nb]]
-            layers.append(NeuralLayer(mx.array(matrice), mx.array(mb), f))
-            i += nb * n + nb + 1
-        
-        return cls(layers)
     
     @classmethod
     def fromFileH5(cls, file_name):
         layers = []
         with h5py.File(file_name, "r") as f:
-            for key in sorted(f.keys()):  # layer_0, layer_1...
+            for key in sorted(f.keys()):
                 grp = f[key]
                 layers.append(Layer.fromH5(grp)) # type: ignore
         return cls(layers)
@@ -88,17 +70,8 @@ class NeuralNetwork:
     def costPrime(self, T: mx.array, Y: mx.array) -> mx.array:
         return 2 * self.loss(T, Y)
 
-    def getDelta(self, results_a: mx.array, T: mx.array):
-        c_delta: mx.array
-        if T is not None:
-            T = T.reshape(results_a.shape)
-
-            # Cas softmax + cross-entropy :
-            # delta de sortie = prédiction - target
-            c_delta = results_a - T
-        else:
-            c_delta = results_a
-
+    def backward(self, delta: mx.array):
+        c_delta = delta
         first_backward = True
 
         for layer in reversed(self.layers):
@@ -109,13 +82,15 @@ class NeuralNetwork:
 
             first_backward = False
 
+        return c_delta
+
 
     def updateWeights(self, learningRate: float, optimizer: str = "sgd"):
         for layer in self.layers:
             layer.update(learningRate, optimizer)
 
-    def __call__(self, vector: mx.array) -> mx.array:
-        last = vector
+    def forward(self, X: mx.array) -> mx.array:
+        last = X
         for layer in self.layers:
             last = layer(last)
         return last
@@ -131,10 +106,6 @@ class NeuralNetwork:
                 to_eval.append(l.kernel)
 
         mx.eval(*to_eval)
-    
-    def freeze(self):
-        for layer in self.layers:
-            layer.training = False
 
     
     @no_grad
@@ -170,7 +141,7 @@ class NeuralNetwork:
 
 
 
-    def train(self, inputs, desired_outputs, test_X = None, test_Y = None, learningRate: float = 0.25, nb_epochs: int = 10, shuffle: bool = True, batch_size: int = 1):
+    def learn(self, inputs, desired_outputs, test_X = None, test_Y = None, learningRate: float = 0.25, nb_epochs: int = 10, shuffle: bool = True, batch_size: int = 1):
         data_size = min(len(inputs), len(desired_outputs))
         datas = list(zip(inputs, desired_outputs))
 
@@ -203,8 +174,17 @@ class NeuralNetwork:
                 batch_cost = self.cost(result_a, batch_t)
                 total_loss += batch_cost
 
+                if batch_t is not None:
+                    T = batch_t.reshape(result_a.shape)
+
+                    # Cas softmax + cross-entropy :
+                    # delta de sortie = prédiction - target
+                    delta = result_a - T
+                else:
+                    delta = result_a
+
                 # Backward
-                self.getDelta(result_a, batch_t)
+                self.backward(delta)
                 self.updateWeights(learningRate)
 
                 self.eval_mlx()
@@ -242,14 +222,8 @@ class NeuralNetwork:
     def saveH5(self, file_name="save.h5"):
         with h5py.File(file_name, "w") as f:
             for i, layer in enumerate(self.layers):
-                layer.toH5(f, f"layer_{i}")
+                layer.toH5File(f, f"layer_{i}")
     
-    def getNpParameters(self):
-        sum = 0
-        for layer in self.layers:
-            sum += layer.getNbParameters()
-        
-        return sum
     
     def get_output_shape(self, input_shape):
         for l in self.layers:
@@ -264,13 +238,6 @@ def get_output_shape(net: NeuralNetwork, input_shape):
 
 
 if __name__ == "__main__":
-    # network = NeuralNetwork.given(
-    #     [[[0.59778282, 0.74936583], [0.70684852, -0.86490778], [-0.78280734, 0.93244844]],
-    #     [[-0.88236882, -0.13081799, -0.06182501]]],
-    #     [[[0], [0], [0]], [[0]]],
-    #     sigmoid
-    # )
-
     network = NeuralNetwork.fromFileH5("save2.h5")
 
     # Vecteurs lignes (n, B) — concaténables sur axis=1

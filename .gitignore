@@ -1,9 +1,2 @@
-# ignore settings
-__pycache__/
-ipynb_checkpoints/
-
-# ignore datasets
-**/datasets
-
-# ignore saves set
-**/saves
+.vscode
+__pycache__
